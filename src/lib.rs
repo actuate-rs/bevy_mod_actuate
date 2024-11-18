@@ -1,6 +1,12 @@
-use actuate::{composer::Composer, prelude::Compose, ScopeState};
-use bevy::{prelude::*, utils::HashMap};
-use std::{any::TypeId, cell::RefCell, marker::PhantomData, mem, ops::Deref, ptr, rc::Rc};
+use actuate::{composer::Composer, prelude::*};
+use bevy::{
+    ecs::world::CommandQueue,
+    prelude::{BuildWorldChildren, Bundle, Entity, Resource, World},
+    utils::HashMap,
+};
+use std::{
+    any::TypeId, cell::RefCell, marker::PhantomData, mem, ops::Deref, ptr, rc::Rc, sync::Arc,
+};
 
 struct Listener {
     is_changed_fn: Box<dyn FnMut(&World) -> bool>,
@@ -8,10 +14,11 @@ struct Listener {
 }
 
 struct Inner {
-    world_ptr: *const World,
+    world_ptr: *mut World,
     listeners: Vec<Box<dyn Fn()>>,
     resource_listeners: HashMap<TypeId, Listener>,
     updates: Vec<Box<dyn FnMut(&mut World)>>,
+    commands: CommandQueue,
 }
 
 #[derive(Clone)]
@@ -30,8 +37,8 @@ impl RuntimeContext {
         })
     }
 
-    unsafe fn world(&self) -> &'static World {
-        &*self.inner.borrow().world_ptr
+    unsafe fn world_mut(&self) -> &'static mut World {
+        &mut *self.inner.borrow().world_ptr
     }
 }
 
@@ -52,15 +59,16 @@ impl Runtime {
 }
 
 // TODO lock compose during ECS updates to prevent unsound async tasks
-pub fn compose(world: &World, wrap: NonSend<Runtime>) {
+pub fn compose(world: &mut World) {
     RUNTIME_CONTEXT.with(|runtime_cx| {
         let mut cell = runtime_cx.borrow_mut();
         let runtime_cx = cell.get_or_insert_with(|| RuntimeContext {
             inner: Rc::new(RefCell::new(Inner {
-                world_ptr: ptr::null(),
+                world_ptr: ptr::null_mut(),
                 listeners: Vec::new(),
                 resource_listeners: HashMap::new(),
                 updates: Vec::new(),
+                commands: CommandQueue::default(),
             })),
         });
 
@@ -83,10 +91,11 @@ pub fn compose(world: &World, wrap: NonSend<Runtime>) {
             }
         }
 
-        runtime_cx.inner.borrow_mut().world_ptr = world as *const World;
+        runtime_cx.inner.borrow_mut().world_ptr = world as *mut World;
     });
 
-    let mut composer = wrap.composer.borrow_mut();
+    let rt = world.non_send_resource_mut::<Runtime>();
+    let mut composer = rt.composer.borrow_mut();
     composer.compose();
 }
 
@@ -98,6 +107,8 @@ pub fn update(world: &mut World) {
         f(world);
     }
     rt.updates.clear();
+
+    rt.commands.apply(world);
 }
 
 pub struct UseWorld<'a> {
@@ -123,7 +134,7 @@ pub fn use_world(cx: ScopeState) -> UseWorld {
 
 impl UseWorld<'_> {
     pub fn resource<T: Resource>(&self) -> &T {
-        unsafe { RuntimeContext::current().world().resource() }
+        unsafe { RuntimeContext::current().world_mut().resource() }
     }
 
     pub fn resource_mut<T: Resource>(&self) -> ResMut<T> {
@@ -144,7 +155,6 @@ impl<T: Resource> ResMut<'_, T> {
             .borrow_mut()
             .updates
             .push(Box::new(move |world| {
-                dbg!(world.change_tick());
                 let f = f_cell.take().unwrap();
                 f(&mut world.resource_mut());
             }));
@@ -218,7 +228,7 @@ pub struct UseResource<'a, R> {
 
 impl<R: Resource> UseResource<'_, R> {
     pub fn get(&self) -> &R {
-        let world = unsafe { RuntimeContext::current().world() };
+        let world = unsafe { RuntimeContext::current().world_mut() };
         world.resource::<R>()
     }
 
@@ -235,3 +245,54 @@ impl<R> Clone for UseResource<'_, R> {
 }
 
 impl<R> Copy for UseResource<'_, R> {}
+
+struct SpawnContext {
+    parent_entity: Entity,
+}
+
+pub struct Spawn<'a, C> {
+    f: Arc<dyn Fn(&mut World) -> Entity + Send + Sync + 'a>,
+    content: C,
+}
+
+unsafe impl<C: Data> Data for Spawn<'_, C> {
+    type Id = Spawn<'static, C::Id>;
+}
+
+impl<'a, C> Spawn<'a, C> {
+    pub fn new<B: Bundle>(make_bundle: impl Fn() -> B + Send + Sync + 'a, content: C) -> Self {
+        Self {
+            f: Arc::new(move |world| {
+                let bundle = make_bundle();
+                world.spawn(bundle).id()
+            }),
+            content,
+        }
+    }
+}
+
+impl<C: Compose> Compose for Spawn<'_, C> {
+    fn compose(cx: Scope<Self>) -> impl Compose {
+        let entity = *use_ref(&cx, || {
+            let world = unsafe { RuntimeContext::current().world_mut() };
+
+            let parent_entity = use_context::<SpawnContext>(&cx)
+                .ok()
+                .map(|cx| cx.parent_entity);
+
+            let entity = (cx.me().f)(world);
+
+            if let Some(parent_entity) = parent_entity {
+                world.entity_mut(parent_entity).add_child(entity);
+            }
+
+            entity
+        });
+
+        use_provider(&cx, || SpawnContext {
+            parent_entity: entity,
+        });
+
+        Ref::map(cx.me(), |me| &me.content)
+    }
+}
