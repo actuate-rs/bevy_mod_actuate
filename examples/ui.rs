@@ -1,6 +1,6 @@
 use actuate::prelude::*;
 use bevy::prelude::*;
-use bevy_mod_actuate::{compose, update, use_world, Runtime};
+use bevy_mod_actuate::{compose, update, use_resource, Runtime};
 
 #[derive(Debug, Resource)]
 struct X(i32);
@@ -10,11 +10,10 @@ struct Ui;
 
 impl Compose for Ui {
     fn compose(cx: Scope<Self>) -> impl Compose {
-        let world = use_world(&cx);
+        let x = use_resource::<X>(&cx);
+        dbg!(x.get());
 
-        dbg!(world.resource::<X>());
-
-        world.resource_mut::<X>().update(|x| x.0 += 1);
+        x.get_mut().update(|x| x.0 += 1);
     }
 }
 
