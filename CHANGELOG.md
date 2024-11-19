@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/actuate-rs/bevy_mod_actuate/compare/v0.1.2...v0.1.3) - 2024-11-19
+
+### Other
+
+- Pass CI
+- Add use_query hook
+- Refactor use_world hook
+- Add docs to http example
+- Merge branch 'main' of https://github.com/actuate-rs/bevy_mod_actuate
+- Update Actuate and add must_use lints
+- Update docs
+- Update README.md
+- Doc example
+
 ## [0.1.2](https://github.com/actuate-rs/bevy_mod_actuate/compare/v0.1.1...v0.1.2) - 2024-11-19
 
 ### Other
