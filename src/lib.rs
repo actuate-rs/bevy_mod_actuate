@@ -22,7 +22,7 @@ use tokio::sync::RwLockWriteGuard;
 
 pub mod prelude {
     pub use crate::{
-        compose, spawn, spawn_with, use_bundle, use_resource, ActuatePlugin, Composition, Runtime,
+        compose, spawn, spawn_with, use_bundle, use_resource, ActuatePlugin, Composition,
         UseResource, UseWorld,
     };
 }
@@ -31,7 +31,7 @@ pub struct ActuatePlugin;
 
 impl Plugin for ActuatePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_non_send_resource(Runtime::new())
+        app.init_non_send_resource::<Runtime>()
             .add_systems(bevy::prelude::Update, compose);
     }
 }
@@ -95,15 +95,15 @@ struct RuntimeComposer {
     guard: Option<RwLockWriteGuard<'static, ()>>,
 }
 
-pub struct Runtime {
+struct Runtime {
     composers: RefCell<HashMap<Entity, RuntimeComposer>>,
     lock: Option<RwLockWriteGuard<'static, ()>>,
     tx: mpsc::Sender<Update>,
     rx: mpsc::Receiver<Update>,
 }
 
-impl Runtime {
-    pub fn new() -> Self {
+impl Default for Runtime {
+    fn default() -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
             composers: RefCell::new(HashMap::new()),
