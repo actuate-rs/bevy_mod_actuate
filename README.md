@@ -25,81 +25,20 @@
 Reactivity for [Bevy](https://github.com/bevyengine/bevy) powered by [Actuate](https://github.com/actuate-rs/actuate).
 
 ```rs
-use actuate::prelude::{Ref, *};
+use actuate::prelude::*;
 use bevy::prelude::*;
-use bevy_mod_actuate::{compose, spawn, Runtime};
-use serde::Deserialize;
-use std::collections::HashMap;
+use bevy_mod_actuate::{compose, spawn, use_resource, Runtime};
 
 #[derive(Data)]
-struct Breed<'a> {
-    name: &'a String,
-    families: &'a Vec<String>,
-}
+struct Timer;
 
-impl Compose for Breed<'_> {
+impl Compose for Timer {
     fn compose(cx: Scope<Self>) -> impl Compose {
-        spawn(
-            Node {
-                flex_direction: FlexDirection::Row,
-                ..default()
-            },
-            (
-                spawn(
-                    (
-                        Text::new(cx.me().name),
-                        Node {
-                            width: Val::Px(300.0),
-                            ..default()
-                        },
-                    ),
-                    (),
-                ),
-                spawn(
-                    Node {
-                        flex_direction: FlexDirection::Column,
-                        ..default()
-                    },
-                    compose::from_iter(Ref::map(cx.me(), |me| me.families), |family| {
-                        spawn(Text::from(family.to_string()), ())
-                    }),
-                ),
-            ),
-        )
-    }
-}
-
-#[derive(Deserialize)]
-struct Response {
-    message: HashMap<String, Vec<String>>,
-}
-
-#[derive(Data)]
-struct BreedList;
-
-impl Compose for BreedList {
-    fn compose(cx: Scope<Self>) -> impl Compose {
-        let breeds = use_mut(&cx, HashMap::new);
-
-        use_task(&cx, move || async move {
-            let json: Response = reqwest::get("https://dog.ceo/api/breeds/list/all")
-                .await
-                .unwrap()
-                .json()
-                .await
-                .unwrap();
-
-            breeds.update(|breeds| *breeds = json.message);
-        });
+        let time = use_resource::<Time>(&cx);
 
         spawn(
-            Node {
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(30.),
-                overflow: Overflow::scroll_y(),
-                ..default()
-            },
-            compose::from_iter(breeds, |(name, families)| Breed { name, families }),
+            Text::new(format!("Elapsed: {:?}", time.get().elapsed())),
+            (),
         )
     }
 }
@@ -107,7 +46,7 @@ impl Compose for BreedList {
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .insert_non_send_resource(Runtime::new(BreedList))
+        .insert_non_send_resource(Runtime::new(Timer))
         .add_systems(Startup, setup)
         .add_systems(Update, compose)
         .run();

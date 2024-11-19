@@ -305,13 +305,20 @@ where
     C: Compose,
 {
     Spawn {
-        f: Arc::new(move |world| world.spawn(bundle.clone()).id()),
+        f: Arc::new(move |world, cell| {
+            if let Some(entity) = cell {
+                world.entity_mut(*entity).insert(bundle.clone());
+            } else {
+                *cell = Some(world.spawn(bundle.clone()).id())
+            }
+        }),
+
         content,
     }
 }
 
 pub struct Spawn<'a, C> {
-    f: Arc<dyn Fn(&mut World) -> Entity + 'a>,
+    f: Arc<dyn Fn(&mut World, &mut Option<Entity>) + 'a>,
     content: C,
 }
 
@@ -328,7 +335,9 @@ impl<C: Compose> Compose for Spawn<'_, C> {
                 .ok()
                 .map(|cx| cx.parent_entity);
 
-            let entity = (cx.me().f)(world);
+            let mut cell = None;
+            (cx.me().f)(world, &mut cell);
+            let entity = cell.unwrap();
 
             if let Some(parent_entity) = parent_entity {
                 world.entity_mut(parent_entity).add_child(entity);
@@ -336,6 +345,9 @@ impl<C: Compose> Compose for Spawn<'_, C> {
 
             entity
         });
+
+        let world = unsafe { RuntimeContext::current().world_mut() };
+        (cx.me().f)(world, &mut Some(entity));
 
         use_provider(&cx, || SpawnContext {
             parent_entity: entity,
