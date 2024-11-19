@@ -4,6 +4,7 @@ use bevy_mod_actuate::prelude::*;
 use serde::Deserialize;
 use std::collections::HashMap;
 
+// Dog breed composable.
 #[derive(Data)]
 struct Breed<'a> {
     name: &'a String,
@@ -44,6 +45,7 @@ struct Response {
     message: HashMap<String, Vec<String>>,
 }
 
+// Dog breed list composable.
 #[derive(Data)]
 struct BreedList;
 
@@ -51,6 +53,7 @@ impl Compose for BreedList {
     fn compose(cx: Scope<Self>) -> impl Compose {
         let breeds = use_mut(&cx, HashMap::new);
 
+        // Spawn a task that loads dog breeds from an HTTP API.
         use_task(&cx, move || async move {
             let json: Response = reqwest::get("https://dog.ceo/api/breeds/list/all")
                 .await
@@ -62,6 +65,7 @@ impl Compose for BreedList {
             breeds.update(|breeds| *breeds = json.message);
         });
 
+        // Render the currently loaded breeds.
         spawn_with(
             Node {
                 flex_direction: FlexDirection::Column,
@@ -84,5 +88,6 @@ fn main() {
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d::default());
 
+    // Spawn a composition with a `BreedList`, adding it to the Actuate runtime.
     commands.spawn(Composition::new(BreedList));
 }
