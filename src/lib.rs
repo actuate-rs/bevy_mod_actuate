@@ -1,6 +1,6 @@
 //! # bevy_mod_actuate
 //!
-//! Reactivity for [Bevy](https://crates.io/crates/bevy) powered by [Actuate](https://crates.io/crates/actuate).
+//! Declarative scenes and reactivity for [Bevy](https://crates.io/crates/bevy) powered by [Actuate](https://crates.io/crates/actuate).
 //!
 //! ```no_run
 //! use actuate::prelude::*;
