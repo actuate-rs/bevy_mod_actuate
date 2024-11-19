@@ -183,52 +183,23 @@ pub fn use_world(cx: ScopeState) -> UseWorld {
 }
 
 impl UseWorld<'_> {
-    pub fn resource<T: Resource>(&self) -> &T {
-        unsafe { RuntimeContext::current().world_mut().resource() }
-    }
-
-    pub fn resource_mut<T: Resource>(&self) -> ResMut<T> {
-        let resource = self.resource();
-        ResMut { resource }
+    pub fn resource<R: Resource + Clone>(&self) -> R {
+        unsafe { RuntimeContext::current().world_mut().resource::<R>().clone() }
     }
 }
 
-pub struct ResMut<'a, T> {
-    resource: &'a T,
-}
+pub fn use_resource<R>(cx: ScopeState) -> UseResource<R>
+where
+    R: Resource + Clone,
+{
+    let world = unsafe { RuntimeContext::current().world_mut() };
 
-impl<T: Resource> ResMut<'_, T> {
-    pub fn update(self, f: impl FnOnce(&mut T) + 'static) {
-        let mut f_cell = Some(f);
-        RuntimeContext::current()
-            .inner
-            .borrow_mut()
-            .updates
-            .push(Box::new(move |world| {
-                let f = f_cell.take().unwrap();
-                f(&mut world.resource_mut());
-            }));
-    }
-}
+    let value = use_mut(cx, || world.resource::<R>().clone());
 
-impl<T> Clone for ResMut<'_, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<T> Copy for ResMut<'_, T> {}
-
-impl<T> Deref for ResMut<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.resource
-    }
-}
-
-pub fn use_resource<R: Resource>(cx: ScopeState) -> UseResource<R> {
-    let f: Box<dyn Fn()> = Box::new(|| cx.set_changed());
+    let f: Box<dyn Fn()> = Box::new(move || {
+        let new = world.resource::<R>().clone();
+        value.update(move |value| *value = new);
+    });
     let f: Box<dyn Fn()> = unsafe { mem::transmute(f) };
 
     let rt_cx = RuntimeContext::current();
@@ -268,24 +239,12 @@ pub fn use_resource<R: Resource>(cx: ScopeState) -> UseResource<R> {
     }
 
     UseResource {
-        _marker: PhantomData,
+        value: value.as_ref(),
     }
 }
 
 pub struct UseResource<'a, R> {
-    _marker: PhantomData<fn(&'a World) -> &'a R>,
-}
-
-impl<R: Resource> UseResource<'_, R> {
-    pub fn get(&self) -> &R {
-        let world = unsafe { RuntimeContext::current().world_mut() };
-        world.resource::<R>()
-    }
-
-    pub fn get_mut(&self) -> ResMut<'_, R> {
-        let resource = self.get();
-        ResMut { resource }
-    }
+    value: Ref<'a, R>,
 }
 
 impl<R> Clone for UseResource<'_, R> {
@@ -296,12 +255,20 @@ impl<R> Clone for UseResource<'_, R> {
 
 impl<R> Copy for UseResource<'_, R> {}
 
+impl<R> Deref for UseResource<'_, R> {
+    type Target = R;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
 struct SpawnContext {
     parent_entity: Entity,
 }
 
 /// Create a [`Spawn`] composable that spawns the provided `bundle` when composed.
-/// 
+///
 /// On re-composition, the spawned entity is updated to the latest provided value.
 pub fn spawn<'a, B, C>(bundle: B, content: C) -> Spawn<'a, C>
 where
@@ -322,7 +289,7 @@ where
 }
 
 /// Use a spawned bundle.
-/// 
+///
 /// `make_bundle` is called once to create the bundle.
 pub fn use_bundle<B: Bundle>(cx: ScopeState, make_bundle: impl FnOnce() -> B) -> Entity {
     use_bundle_inner(cx, |world, cell| {
@@ -338,7 +305,7 @@ pub fn use_bundle<B: Bundle>(cx: ScopeState, make_bundle: impl FnOnce() -> B) ->
 type SpawnFn<'a> = Arc<dyn Fn(&mut World, &mut Option<Entity>) + 'a>;
 
 /// Spawn composable.
-/// 
+///
 /// See [`spawn`] for more information.
 pub struct Spawn<'a, C> {
     f: SpawnFn<'a>,
