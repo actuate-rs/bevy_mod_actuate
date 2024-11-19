@@ -1,6 +1,6 @@
 use actuate::prelude::{Ref, *};
 use bevy::prelude::*;
-use bevy_mod_actuate::{compose, spawn, spawn_with, Runtime};
+use bevy_mod_actuate::prelude::*;
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -76,13 +76,13 @@ impl Compose for BreedList {
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .insert_non_send_resource(Runtime::new(BreedList))
+        .add_plugins((DefaultPlugins, ActuatePlugin))
         .add_systems(Startup, setup)
-        .add_systems(Update, compose)
         .run();
 }
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d::default());
+
+    commands.spawn(Composition::new(BreedList));
 }

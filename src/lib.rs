@@ -3,8 +3,9 @@ use actuate::{
     prelude::*,
 };
 use bevy::{
-    ecs::world::CommandQueue,
-    prelude::{BuildChildren, Bundle, Entity, Resource, World},
+    app::Plugin,
+    ecs::{component::StorageType, world::CommandQueue},
+    prelude::{App, BuildChildren, Bundle, Component, Entity, Resource, World},
     utils::HashMap,
 };
 use std::{
@@ -18,6 +19,22 @@ use std::{
     sync::{mpsc, Arc},
 };
 use tokio::sync::RwLockWriteGuard;
+
+pub mod prelude {
+    pub use crate::{
+        compose, spawn, spawn_with, use_bundle, use_resource, ActuatePlugin, Composition, Runtime,
+        UseResource, UseWorld,
+    };
+}
+
+pub struct ActuatePlugin;
+
+impl Plugin for ActuatePlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_non_send_resource(Runtime::new())
+            .add_systems(bevy::prelude::Update, compose);
+    }
+}
 
 struct Listener {
     is_changed_fn: Box<dyn FnMut(&World) -> bool>,
@@ -73,24 +90,75 @@ unsafe impl Send for RuntimeUpdater {}
 
 unsafe impl Sync for RuntimeUpdater {}
 
+struct RuntimeComposer {
+    composer: Composer,
+    guard: Option<RwLockWriteGuard<'static, ()>>,
+}
+
 pub struct Runtime {
-    composer: RefCell<Composer>,
+    composers: RefCell<HashMap<Entity, RuntimeComposer>>,
     lock: Option<RwLockWriteGuard<'static, ()>>,
+    tx: mpsc::Sender<Update>,
     rx: mpsc::Receiver<Update>,
 }
 
 impl Runtime {
-    pub fn new(content: impl Compose + 'static) -> Self {
+    pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
-            composer: RefCell::new(Composer::with_updater(
-                content,
-                RuntimeUpdater { queue: tx },
-                tokio::runtime::Runtime::new().unwrap(),
-            )),
+            composers: RefCell::new(HashMap::new()),
             lock: None,
+            tx,
             rx,
         }
+    }
+}
+
+pub struct Composition<C> {
+    content: Option<C>,
+}
+
+impl<C> Composition<C> {
+    pub fn new(content: C) -> Self {
+        Self {
+            content: Some(content),
+        }
+    }
+}
+
+impl<C> Component for Composition<C>
+where
+    C: Compose + Send + Sync + 'static,
+{
+    const STORAGE_TYPE: StorageType = StorageType::SparseSet;
+    fn register_component_hooks(hooks: &mut bevy::ecs::component::ComponentHooks) {
+        hooks.on_insert(|mut world, entity, _| {
+            world.commands().queue(move |world: &mut World| {
+                let content = world
+                    .get_mut::<Composition<C>>(entity)
+                    .unwrap()
+                    .content
+                    .take();
+
+                let tx = world.non_send_resource::<Runtime>().tx.clone();
+
+                world
+                    .non_send_resource_mut::<Runtime>()
+                    .composers
+                    .borrow_mut()
+                    .insert(
+                        entity,
+                        RuntimeComposer {
+                            composer: Composer::with_updater(
+                                content,
+                                RuntimeUpdater { queue: tx },
+                                tokio::runtime::Runtime::new().unwrap(),
+                            ),
+                            guard: None,
+                        },
+                    );
+            });
+        });
     }
 }
 
@@ -133,9 +201,12 @@ pub fn compose(world: &mut World) {
     });
 
     let rt = world.non_send_resource_mut::<Runtime>();
-    let mut composer = rt.composer.borrow_mut();
-    composer.compose();
-    drop(composer);
+    let mut composers = rt.composers.borrow_mut();
+    for rt_composer in composers.values_mut() {
+        rt_composer.guard = None;
+        rt_composer.composer.compose();
+    }
+    drop(composers);
 
     while let Ok(update) = rt.rx.try_recv() {
         unsafe { update.apply() }
@@ -154,12 +225,13 @@ pub fn compose(world: &mut World) {
         rt.commands.apply(world);
     }
 
-    let mut rt = world.non_send_resource_mut::<Runtime>();
-    let composer = rt.composer.borrow_mut();
-    let lock = composer.lock();
-    let lock: RwLockWriteGuard<'static, ()> = unsafe { mem::transmute(lock) };
-    drop(composer);
-    rt.lock = Some(lock);
+    let rt = &mut *world.non_send_resource_mut::<Runtime>();
+    let mut composers = rt.composers.borrow_mut();
+    for rt_composer in composers.values_mut() {
+        let guard = rt_composer.composer.lock();
+        let guard: RwLockWriteGuard<'static, ()> = unsafe { mem::transmute(guard) };
+        rt_composer.guard = Some(guard);
+    }
 }
 
 /// Hook for [`use_world`].

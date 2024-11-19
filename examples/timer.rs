@@ -1,6 +1,6 @@
 use actuate::prelude::*;
 use bevy::prelude::*;
-use bevy_mod_actuate::{compose, spawn, use_resource, Runtime};
+use bevy_mod_actuate::prelude::*;
 
 #[derive(Data)]
 struct Timer;
@@ -15,13 +15,13 @@ impl Compose for Timer {
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .insert_non_send_resource(Runtime::new(Timer))
+        .add_plugins((DefaultPlugins, ActuatePlugin))
         .add_systems(Startup, setup)
-        .add_systems(Update, compose)
         .run();
 }
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d::default());
+
+    commands.spawn(Composition::new(Timer));
 }
