@@ -313,6 +313,8 @@ impl UseWorld<'_> {
 }
 
 /// Use a [`Resource`] from the ECS world.
+///
+/// Changing a resource tracked with this hook will cause the composable to re-compose.
 pub fn use_resource<R>(cx: ScopeState) -> UseResource<R>
 where
     R: Resource + Clone,
