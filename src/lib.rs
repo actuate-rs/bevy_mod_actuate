@@ -24,11 +24,12 @@ struct Listener {
     fns: Vec<Box<dyn Fn()>>,
 }
 
+type UpdateFn = Box<dyn FnMut(&mut World)>;
 struct Inner {
     world_ptr: *mut World,
     listeners: Vec<Box<dyn Fn()>>,
     resource_listeners: HashMap<TypeId, Listener>,
-    updates: Vec<Box<dyn FnMut(&mut World)>>,
+    updates: Vec<UpdateFn>,
     commands: CommandQueue,
 }
 
@@ -317,8 +318,9 @@ where
     }
 }
 
+type SpawnFn<'a> = Arc<dyn Fn(&mut World, &mut Option<Entity>) + 'a>;
 pub struct Spawn<'a, C> {
-    f: Arc<dyn Fn(&mut World, &mut Option<Entity>) + 'a>,
+    f: SpawnFn<'a>,
     content: C,
 }
 
