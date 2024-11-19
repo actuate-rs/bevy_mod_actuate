@@ -22,7 +22,7 @@
 
 <br />
 
-Reactivity for [Bevy](https://github.com/bevyengine/bevy) powered by [Actuate](https://github.com/actuate-rs/actuate).
+Declarative scenes and reactivity for [Bevy](https://github.com/bevyengine/bevy) powered by [Actuate](https://github.com/actuate-rs/actuate).
 
 ```rs
 use actuate::prelude::*;
