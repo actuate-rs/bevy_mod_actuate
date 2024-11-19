@@ -83,9 +83,11 @@ struct Listener {
 
 type UpdateFn = Box<dyn FnMut(&mut World)>;
 
+type WorldListenerFn = Rc<dyn Fn(&mut World)>;
+
 struct Inner {
     world_ptr: *mut World,
-    listeners: SlotMap<DefaultKey, Rc<dyn Fn(&mut World)>>,
+    listeners: SlotMap<DefaultKey, WorldListenerFn>,
     resource_listeners: HashMap<TypeId, Listener>,
     updates: Vec<UpdateFn>,
     commands: CommandQueue,
@@ -312,11 +314,10 @@ pub fn use_world<'a>(cx: ScopeState<'a>, with_world: impl Fn(&mut World) + 'a) {
     });
 }
 
-
 /// Use a [`Query`] from the ECS world.
 ///
 /// `with_query` will be called on every frame with the latest query.
-/// 
+///
 /// Change detection is implemented as a traditional system parameter.
 pub fn use_query<'a, D>(cx: ScopeState<'a>, with_query: impl Fn(Query<D>) + 'a)
 where
@@ -332,7 +333,6 @@ where
         with_query(query)
     })
 }
-
 
 /// Use a [`Resource`] from the ECS world.
 ///
