@@ -25,6 +25,7 @@ struct Listener {
 }
 
 type UpdateFn = Box<dyn FnMut(&mut World)>;
+
 struct Inner {
     world_ptr: *mut World,
     listeners: Vec<Box<dyn Fn()>>,
@@ -161,10 +162,12 @@ pub fn compose(world: &mut World) {
     rt.lock = Some(lock);
 }
 
+/// Hook for [`use_world`].
 pub struct UseWorld<'a> {
     _marker: PhantomData<ScopeState<'a>>,
 }
 
+/// Use access to the current ECS world.
 pub fn use_world(cx: ScopeState) -> UseWorld {
     let f: Box<dyn Fn()> = Box::new(move || {
         cx.set_changed();
@@ -184,10 +187,16 @@ pub fn use_world(cx: ScopeState) -> UseWorld {
 
 impl UseWorld<'_> {
     pub fn resource<R: Resource + Clone>(&self) -> R {
-        unsafe { RuntimeContext::current().world_mut().resource::<R>().clone() }
+        unsafe {
+            RuntimeContext::current()
+                .world_mut()
+                .resource::<R>()
+                .clone()
+        }
     }
 }
 
+/// Use a [`Resource`] from the ECS world.
 pub fn use_resource<R>(cx: ScopeState) -> UseResource<R>
 where
     R: Resource + Clone,
@@ -243,6 +252,7 @@ where
     }
 }
 
+/// Hook for [`use_resource`].
 pub struct UseResource<'a, R> {
     value: Ref<'a, R>,
 }
@@ -346,9 +356,7 @@ fn use_bundle_inner(cx: ScopeState, spawn: impl FnOnce(&mut World, &mut Option<E
 
         let mut cell = None;
         f_cell.take().unwrap()(world, &mut cell);
-        let entity = cell.unwrap();
-
-        entity
+        cell.unwrap()
     });
 
     if let Some(f) = f_cell {
@@ -356,7 +364,7 @@ fn use_bundle_inner(cx: ScopeState, spawn: impl FnOnce(&mut World, &mut Option<E
         f(world, &mut Some(entity));
     }
 
-    use_drop(&cx, move || {
+    use_drop(cx, move || {
         let world = unsafe { RuntimeContext::current().world_mut() };
         world.despawn(entity);
     });
