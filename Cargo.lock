@@ -913,6 +913,7 @@ dependencies = [
  "bevy",
  "reqwest",
  "serde",
+ "slotmap",
  "tokio",
 ]
 

@@ -9,6 +9,7 @@ repository = "https://github.com/actuate-rs/bevy_mod_actuate"
 [dependencies]
 actuate = { version = "0.6.1", features = ["rt"] }
 bevy = "0.15.0-rc.3"
+slotmap = "1.0.7"
 tokio = { version = "1.41.1", features = ["sync"] }
 
 [dev-dependencies]

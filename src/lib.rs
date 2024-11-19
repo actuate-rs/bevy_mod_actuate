@@ -37,6 +37,7 @@
 use actuate::{
     composer::{Composer, Update, Updater},
     prelude::*,
+    use_callback,
 };
 use bevy::{
     app::Plugin,
@@ -44,6 +45,7 @@ use bevy::{
     prelude::{App, BuildChildren, Bundle, Component, Entity, Resource, World},
     utils::HashMap,
 };
+use slotmap::{DefaultKey, SlotMap};
 use std::{
     any::TypeId,
     cell::RefCell,
@@ -83,7 +85,7 @@ type UpdateFn = Box<dyn FnMut(&mut World)>;
 
 struct Inner {
     world_ptr: *mut World,
-    listeners: Vec<Box<dyn Fn()>>,
+    listeners: SlotMap<DefaultKey, Rc<dyn Fn(&mut World)>>,
     resource_listeners: HashMap<TypeId, Listener>,
     updates: Vec<UpdateFn>,
     commands: CommandQueue,
@@ -214,15 +216,15 @@ fn compose(world: &mut World) {
         let runtime_cx = cell.get_or_insert_with(|| RuntimeContext {
             inner: Rc::new(RefCell::new(Inner {
                 world_ptr: ptr::null_mut(),
-                listeners: Vec::new(),
+                listeners: SlotMap::new(),
                 resource_listeners: HashMap::new(),
                 updates: Vec::new(),
                 commands: CommandQueue::default(),
             })),
         });
 
-        for f in &runtime_cx.inner.borrow_mut().listeners {
-            f()
+        for f in runtime_cx.inner.borrow().listeners.values() {
+            f(world)
         }
         runtime_cx.inner.borrow_mut().listeners.clear();
 
@@ -283,17 +285,31 @@ pub struct UseWorld<'a> {
 }
 
 /// Use access to the current ECS world.
-pub fn use_world(cx: ScopeState) -> UseWorld {
-    let f: Box<dyn Fn()> = Box::new(move || {
-        cx.set_changed();
-    });
-    let f: Box<dyn Fn()> = unsafe { mem::transmute(f) };
+///
+/// `with_world` will be called on every frame to update the composable.
+pub fn use_world<'a>(cx: ScopeState<'a>, with_world: impl Fn(&mut World) + 'a) -> UseWorld {
+    // TODO
+    let f: Rc<dyn Fn(&'static mut World)> = use_callback(cx, move |world: &'static mut World| {
+        with_world(world);
+    })
+    .clone();
+    let f: Rc<dyn Fn(&mut World)> = unsafe { mem::transmute(f) };
 
-    RuntimeContext::current()
-        .inner
-        .borrow_mut()
-        .listeners
-        .push(f);
+    let key = *use_ref(cx, || {
+        RuntimeContext::current()
+            .inner
+            .borrow_mut()
+            .listeners
+            .insert(f)
+    });
+
+    use_drop(cx, move || {
+        RuntimeContext::current()
+            .inner
+            .borrow_mut()
+            .listeners
+            .remove(key);
+    });
 
     UseWorld {
         _marker: PhantomData,
@@ -525,7 +541,7 @@ fn use_bundle_inner(cx: ScopeState, spawn: impl FnOnce(&mut World, &mut Option<E
 
     use_drop(cx, move || {
         let world = unsafe { RuntimeContext::current().world_mut() };
-        world.despawn(entity);
+        world.try_despawn(entity);
     });
 
     entity
