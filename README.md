@@ -36,7 +36,7 @@ impl Compose for Timer {
     fn compose(cx: Scope<Self>) -> impl Compose {
         let time = use_resource::<Time>(&cx);
 
-        spawn(Text::new(format!("Elapsed: {:?}", time.elapsed())), ())
+        spawn(Text::new(format!("Elapsed: {:?}", time.elapsed())))
     }
 }
 

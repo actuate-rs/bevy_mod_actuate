@@ -277,27 +277,6 @@ struct SpawnContext {
     parent_entity: Entity,
 }
 
-/// Create a [`Spawn`] composable that spawns the provided `bundle` when composed.
-///
-/// On re-composition, the spawned entity is updated to the latest provided value.
-pub fn spawn<'a, B, C>(bundle: B, content: C) -> Spawn<'a, C>
-where
-    B: Bundle + Clone,
-    C: Compose,
-{
-    Spawn {
-        f: Arc::new(move |world, cell| {
-            if let Some(entity) = cell {
-                world.entity_mut(*entity).insert(bundle.clone());
-            } else {
-                *cell = Some(world.spawn(bundle.clone()).id())
-            }
-        }),
-
-        content,
-    }
-}
-
 /// Use a spawned bundle.
 ///
 /// `make_bundle` is called once to create the bundle.
@@ -312,26 +291,77 @@ pub fn use_bundle<B: Bundle>(cx: ScopeState, make_bundle: impl FnOnce() -> B) ->
     })
 }
 
-type SpawnFn<'a> = Arc<dyn Fn(&mut World, &mut Option<Entity>) + 'a>;
+type SpawnFn = Arc<dyn Fn(&mut World, &mut Option<Entity>)>;
+
+/// Create a [`Spawn`] composable that spawns the provided `bundle` when composed.
+///
+/// On re-composition, the spawned entity is updated to the latest provided value.
+pub fn spawn<B>(bundle: B) -> Spawn
+where
+    B: Bundle + Clone,
+{
+    Spawn {
+        spawn_fn: Arc::new(move |world, cell| {
+            if let Some(entity) = cell {
+                world.entity_mut(*entity).insert(bundle.clone());
+            } else {
+                *cell = Some(world.spawn(bundle.clone()).id())
+            }
+        }),
+    }
+}
 
 /// Spawn composable.
 ///
 /// See [`spawn`] for more information.
-pub struct Spawn<'a, C> {
-    f: SpawnFn<'a>,
+#[derive(Data)]
+pub struct Spawn {
+    spawn_fn: SpawnFn,
+}
+
+impl Compose for Spawn {
+    fn compose(cx: Scope<Self>) -> impl Compose {
+        use_bundle_inner(&cx, |world, entity| {
+            (cx.me().spawn_fn)(world, entity);
+        });
+    }
+}
+
+/// Create a [`Spawn`] composable that spawns the provided `bundle` when composed, with some content as its children.
+///
+/// On re-composition, the spawned entity is updated to the latest provided value.
+pub fn spawn_with<B, C>(bundle: B, content: C) -> SpawnWith<C>
+where
+    B: Bundle + Clone,
+    C: Compose,
+{
+    SpawnWith {
+        spawn_fn: Arc::new(move |world, cell| {
+            if let Some(entity) = cell {
+                world.entity_mut(*entity).insert(bundle.clone());
+            } else {
+                *cell = Some(world.spawn(bundle.clone()).id())
+            }
+        }),
+        content,
+    }
+}
+
+/// Spawn composable with content.
+///
+/// See [`spawn_with`] for more information.
+#[derive(Data)]
+pub struct SpawnWith<C> {
+    spawn_fn: SpawnFn,
     content: C,
 }
 
-unsafe impl<C: Data> Data for Spawn<'_, C> {
-    type Id = Spawn<'static, C::Id>;
-}
-
-impl<C: Compose> Compose for Spawn<'_, C> {
+impl<C: Compose> Compose for SpawnWith<C> {
     fn compose(cx: Scope<Self>) -> impl Compose {
         let spawn_cx = use_context::<SpawnContext>(&cx);
 
         let entity = use_bundle_inner(&cx, |world, entity| {
-            (cx.me().f)(world, entity);
+            (cx.me().spawn_fn)(world, entity);
         });
 
         use_provider(&cx, || {
