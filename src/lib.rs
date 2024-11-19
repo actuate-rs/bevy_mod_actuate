@@ -300,6 +300,9 @@ struct SpawnContext {
     parent_entity: Entity,
 }
 
+/// Create a [`Spawn`] composable that spawns the provided `bundle` when composed.
+/// 
+/// On re-composition, the spawned entity is updated to the latest provided value.
 pub fn spawn<'a, B, C>(bundle: B, content: C) -> Spawn<'a, C>
 where
     B: Bundle + Clone,
@@ -318,7 +321,25 @@ where
     }
 }
 
+/// Use a spawned bundle.
+/// 
+/// `make_bundle` is called once to create the bundle.
+pub fn use_bundle<B: Bundle>(cx: ScopeState, make_bundle: impl FnOnce() -> B) -> Entity {
+    use_bundle_inner(cx, |world, cell| {
+        let bundle = make_bundle();
+        if let Some(entity) = cell {
+            world.entity_mut(*entity).insert(bundle);
+        } else {
+            *cell = Some(world.spawn(bundle).id());
+        }
+    })
+}
+
 type SpawnFn<'a> = Arc<dyn Fn(&mut World, &mut Option<Entity>) + 'a>;
+
+/// Spawn composable.
+/// 
+/// See [`spawn`] for more information.
 pub struct Spawn<'a, C> {
     f: SpawnFn<'a>,
     content: C,
@@ -330,36 +351,48 @@ unsafe impl<C: Data> Data for Spawn<'_, C> {
 
 impl<C: Compose> Compose for Spawn<'_, C> {
     fn compose(cx: Scope<Self>) -> impl Compose {
-        let entity = *use_ref(&cx, || {
-            let world = unsafe { RuntimeContext::current().world_mut() };
+        let spawn_cx = use_context::<SpawnContext>(&cx);
 
-            let parent_entity = use_context::<SpawnContext>(&cx)
-                .ok()
-                .map(|cx| cx.parent_entity);
+        let entity = use_bundle_inner(&cx, |world, entity| {
+            (cx.me().f)(world, entity);
+        });
 
-            let mut cell = None;
-            (cx.me().f)(world, &mut cell);
-            let entity = cell.unwrap();
-
-            if let Some(parent_entity) = parent_entity {
+        use_provider(&cx, || {
+            if let Ok(parent_entity) = spawn_cx.map(|cx| cx.parent_entity) {
+                let world = unsafe { RuntimeContext::current().world_mut() };
                 world.entity_mut(parent_entity).add_child(entity);
             }
 
-            entity
-        });
-
-        let world = unsafe { RuntimeContext::current().world_mut() };
-        (cx.me().f)(world, &mut Some(entity));
-
-        use_provider(&cx, || SpawnContext {
-            parent_entity: entity,
-        });
-
-        use_drop(&cx, move || {
-            let world = unsafe { RuntimeContext::current().world_mut() };
-            world.despawn(entity);
+            SpawnContext {
+                parent_entity: entity,
+            }
         });
 
         Ref::map(cx.me(), |me| &me.content)
     }
+}
+
+fn use_bundle_inner(cx: ScopeState, spawn: impl FnOnce(&mut World, &mut Option<Entity>)) -> Entity {
+    let mut f_cell = Some(spawn);
+    let entity = *use_ref(cx, || {
+        let world = unsafe { RuntimeContext::current().world_mut() };
+
+        let mut cell = None;
+        f_cell.take().unwrap()(world, &mut cell);
+        let entity = cell.unwrap();
+
+        entity
+    });
+
+    if let Some(f) = f_cell {
+        let world = unsafe { RuntimeContext::current().world_mut() };
+        f(world, &mut Some(entity));
+    }
+
+    use_drop(&cx, move || {
+        let world = unsafe { RuntimeContext::current().world_mut() };
+        world.despawn(entity);
+    });
+
+    entity
 }
