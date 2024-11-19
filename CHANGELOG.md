@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/actuate-rs/bevy_mod_actuate/compare/v0.1.1...v0.1.2) - 2024-11-19
+
+### Other
+
+- Deny missing docs
+- Pass clippy
+- Update README
+- Create Composition component
+- Fix Spawn
+- Create spawn_with composable
+- Clean up
+- Fix UseWorld and UseResource
+- Create use_bundle hook
+
 ## [0.1.1](https://github.com/actuate-rs/bevy_mod_actuate/compare/v0.1.0...v0.1.1) - 2024-11-19
 
 ### Other
