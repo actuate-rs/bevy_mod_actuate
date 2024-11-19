@@ -22,6 +22,8 @@ jobs:
           fetch-depth: 0
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - name: Install Dependencies
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
       - name: Run release-plz
         uses: MarcoIeni/release-plz-action@v0.5
         with:
