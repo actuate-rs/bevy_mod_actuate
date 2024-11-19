@@ -13,30 +13,28 @@ struct Breed<'a> {
 impl Compose for Breed<'_> {
     fn compose(cx: Scope<Self>) -> impl Compose {
         spawn(
-            || Node {
+            Node {
                 flex_direction: FlexDirection::Row,
                 ..default()
             },
             (
                 spawn(
-                    move || {
-                        (
-                            Text::new(cx.me().name),
-                            Node {
-                                width: Val::Px(300.0),
-                                ..default()
-                            },
-                        )
-                    },
+                    (
+                        Text::new(cx.me().name),
+                        Node {
+                            width: Val::Px(300.0),
+                            ..default()
+                        },
+                    ),
                     (),
                 ),
                 spawn(
-                    || Node {
+                    Node {
                         flex_direction: FlexDirection::Column,
                         ..default()
                     },
                     compose::from_iter(Ref::map(cx.me(), |me| me.families), |family| {
-                        spawn(|| Text::from(family.to_string()), ())
+                        spawn(Text::from(family.to_string()), ())
                     }),
                 ),
             ),
@@ -68,7 +66,7 @@ impl Compose for BreedList {
         });
 
         spawn(
-            || Node {
+            Node {
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(30.),
                 overflow: Overflow::scroll_y(),

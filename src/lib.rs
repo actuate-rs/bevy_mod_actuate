@@ -299,16 +299,13 @@ struct SpawnContext {
     parent_entity: Entity,
 }
 
-pub fn spawn<'a, B, C>(make_bundle: impl Fn() -> B + 'a, content: C) -> Spawn<'a, C>
+pub fn spawn<'a, B, C>(bundle: B, content: C) -> Spawn<'a, C>
 where
-    B: Bundle,
+    B: Bundle + Clone,
     C: Compose,
 {
     Spawn {
-        f: Arc::new(move |world| {
-            let bundle = make_bundle();
-            world.spawn(bundle).id()
-        }),
+        f: Arc::new(move |world| world.spawn(bundle.clone()).id()),
         content,
     }
 }
