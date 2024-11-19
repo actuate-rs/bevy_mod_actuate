@@ -433,6 +433,7 @@ where
 ///
 /// See [`spawn`] for more information.
 #[derive(Data)]
+#[must_use = "Composables do nothing unless composed with `actuate::run` or returned from other composables"]
 pub struct Spawn {
     spawn_fn: SpawnFn,
 }
@@ -478,6 +479,7 @@ where
 ///
 /// See [`spawn_with`] for more information.
 #[derive(Data)]
+#[must_use = "Composables do nothing unless composed with `actuate::run` or returned from other composables"]
 pub struct SpawnWith<C> {
     spawn_fn: SpawnFn,
     content: C,
