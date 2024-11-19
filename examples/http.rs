@@ -1,8 +1,48 @@
-use actuate::prelude::*;
+use actuate::prelude::{Ref, *};
 use bevy::prelude::*;
 use bevy_mod_actuate::{compose, spawn, Runtime};
 use serde::Deserialize;
 use std::collections::HashMap;
+
+#[derive(Data)]
+struct Breed<'a> {
+    name: &'a String,
+    families: &'a Vec<String>,
+}
+
+impl Compose for Breed<'_> {
+    fn compose(cx: Scope<Self>) -> impl Compose {
+        spawn(
+            || Node {
+                flex_direction: FlexDirection::Row,
+                ..default()
+            },
+            (
+                spawn(
+                    move || {
+                        (
+                            Text::new(cx.me().name),
+                            Node {
+                                width: Val::Px(300.0),
+                                ..default()
+                            },
+                        )
+                    },
+                    (),
+                ),
+                spawn(
+                    || Node {
+                        flex_direction: FlexDirection::Column,
+                        ..default()
+                    },
+                    compose::from_iter(Ref::map(cx.me(), |me| me.families), |family| {
+                        spawn(|| Text::from(family.to_string()), ())
+                    }),
+                ),
+            ),
+        )
+    }
+}
 
 #[derive(Deserialize)]
 struct Response {
@@ -10,9 +50,9 @@ struct Response {
 }
 
 #[derive(Data)]
-struct Ui;
+struct BreedList;
 
-impl Compose for Ui {
+impl Compose for BreedList {
     fn compose(cx: Scope<Self>) -> impl Compose {
         let breeds = use_mut(&cx, HashMap::new);
 
@@ -28,50 +68,13 @@ impl Compose for Ui {
         });
 
         spawn(
-            || NodeBundle {
-                style: Style {
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(30.),
-                    ..default()
-                },
+            || Node {
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(30.),
+                overflow: Overflow::scroll_y(),
                 ..default()
             },
-            compose::from_iter(breeds, |(name, families)| {
-                spawn(
-                    || NodeBundle {
-                        style: Style {
-                            flex_direction: FlexDirection::Row,
-                            ..default()
-                        },
-                        ..default()
-                    },
-                    (
-                        spawn(
-                            || TextBundle {
-                                text: Text::from_section(name.to_string(), TextStyle::default()),
-                                style: Style {
-                                    width: Val::Px(300.0),
-                                    ..default()
-                                },
-                                ..default()
-                            },
-                            (),
-                        ),
-                        spawn(
-                            || NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Column,
-                                    ..default()
-                                },
-                                ..default()
-                            },
-                            compose::from_iter(*families, |family| {
-                                spawn(|| TextBundle::from(family.to_string()), ())
-                            }),
-                        ),
-                    ),
-                )
-            }),
+            compose::from_iter(breeds, |(name, families)| Breed { name, families }),
         )
     }
 }
@@ -79,12 +82,12 @@ impl Compose for Ui {
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .insert_non_send_resource(Runtime::new(Ui))
+        .insert_non_send_resource(Runtime::new(BreedList))
         .add_systems(Startup, setup)
         .add_systems(Update, compose)
         .run();
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2d::default());
 }

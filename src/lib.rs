@@ -3,9 +3,8 @@ use actuate::{
     prelude::*,
 };
 use bevy::{
-    app::Plugin,
     ecs::world::CommandQueue,
-    prelude::{App, BuildWorldChildren, Bundle, Entity, Resource, World},
+    prelude::{BuildChildren, Bundle, Entity, Resource, World},
     utils::HashMap,
 };
 use std::{
@@ -300,7 +299,7 @@ struct SpawnContext {
     parent_entity: Entity,
 }
 
-pub fn spawn<'a, B, C>(make_bundle: impl Fn() -> B + Send + Sync + 'a, content: C) -> Spawn<'a, C>
+pub fn spawn<'a, B, C>(make_bundle: impl Fn() -> B + 'a, content: C) -> Spawn<'a, C>
 where
     B: Bundle,
     C: Compose,
@@ -315,7 +314,7 @@ where
 }
 
 pub struct Spawn<'a, C> {
-    f: Arc<dyn Fn(&mut World) -> Entity + Send + Sync + 'a>,
+    f: Arc<dyn Fn(&mut World) -> Entity + 'a>,
     content: C,
 }
 
