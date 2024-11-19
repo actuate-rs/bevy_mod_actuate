@@ -41,8 +41,8 @@ use actuate::{
 };
 use bevy::{
     app::Plugin,
-    ecs::{component::StorageType, world::CommandQueue},
-    prelude::{App, BuildChildren, Bundle, Component, Entity, Resource, World},
+    ecs::{component::StorageType, query::QueryData, system::SystemState, world::CommandQueue},
+    prelude::{App, BuildChildren, Bundle, Component, Entity, Query, Resource, World},
     utils::HashMap,
 };
 use slotmap::{DefaultKey, SlotMap};
@@ -287,7 +287,7 @@ pub struct UseWorld<'a> {
 /// Use access to the current ECS world.
 ///
 /// `with_world` will be called on every frame to update the composable.
-pub fn use_world<'a>(cx: ScopeState<'a>, with_world: impl Fn(&mut World) + 'a) -> UseWorld {
+pub fn use_world<'a>(cx: ScopeState<'a>, with_world: impl Fn(&mut World) + 'a) {
     // TODO
     let f: Rc<dyn Fn(&'static mut World)> = use_callback(cx, move |world: &'static mut World| {
         with_world(world);
@@ -310,23 +310,29 @@ pub fn use_world<'a>(cx: ScopeState<'a>, with_world: impl Fn(&mut World) + 'a) -
             .listeners
             .remove(key);
     });
-
-    UseWorld {
-        _marker: PhantomData,
-    }
 }
 
-impl UseWorld<'_> {
-    /// Get a resource by its type.
-    pub fn resource<R: Resource + Clone>(&self) -> R {
-        unsafe {
-            RuntimeContext::current()
-                .world_mut()
-                .resource::<R>()
-                .clone()
-        }
-    }
+
+/// Use a [`Query`] from the ECS world.
+///
+/// `with_query` will be called on every frame with the latest query.
+/// 
+/// Change detection is implemented as a traditional system parameter.
+pub fn use_query<'a, D>(cx: ScopeState<'a>, with_query: impl Fn(Query<D>) + 'a)
+where
+    D: QueryData + 'static,
+{
+    let system_state_cell = use_ref(cx, || RefCell::new(None));
+
+    use_world(cx, move |world| {
+        let mut system_state_cell = system_state_cell.borrow_mut();
+        let system_state =
+            system_state_cell.get_or_insert_with(|| SystemState::<Query<D>>::new(world));
+        let query = system_state.get_mut(world);
+        with_query(query)
+    })
 }
+
 
 /// Use a [`Resource`] from the ECS world.
 ///
