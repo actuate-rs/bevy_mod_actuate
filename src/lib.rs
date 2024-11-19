@@ -1,3 +1,39 @@
+//! # bevy_mod_actuate
+//!
+//! Reactivity for [Bevy](https://crates.io/crates/bevy) powered by [Actuate](https://crates.io/crates/actuate).
+//!
+//! ```no_run
+//! use actuate::prelude::*;
+//! use bevy::prelude::*;
+//! use bevy_mod_actuate::prelude::*;
+//!
+//! #[derive(Data)]
+//! struct Timer;
+//!
+//! impl Compose for Timer {
+//!     fn compose(cx: Scope<Self>) -> impl Compose {
+//!         let time = use_resource::<Time>(&cx);
+//!
+//!         spawn(Text::new(format!("Elapsed: {:?}", time.elapsed())))
+//!     }
+//! }
+//!
+//! fn main() {
+//!     App::new()
+//!         .add_plugins((DefaultPlugins, ActuatePlugin))
+//!         .add_systems(Startup, setup)
+//!         .run();
+//! }
+//!
+//! fn setup(mut commands: Commands) {
+//!     commands.spawn(Camera2d::default());
+//!
+//!     commands.spawn(Composition::new(Timer));
+//! }
+//! ```
+
+#![deny(missing_docs)]
+
 use actuate::{
     composer::{Composer, Update, Updater},
     prelude::*,
@@ -20,13 +56,15 @@ use std::{
 };
 use tokio::sync::RwLockWriteGuard;
 
+/// Prelude of common items.
 pub mod prelude {
     pub use crate::{
-        compose, spawn, spawn_with, use_bundle, use_resource, ActuatePlugin, Composition,
-        UseResource, UseWorld,
+        spawn, spawn_with, use_bundle, use_resource, ActuatePlugin, Composition, UseResource,
+        UseWorld,
     };
 }
 
+/// Actuate plugin to run [`Composition`]s.
 pub struct ActuatePlugin;
 
 impl Plugin for ActuatePlugin {
@@ -114,11 +152,16 @@ impl Default for Runtime {
     }
 }
 
+/// Composition of some composable content.
 pub struct Composition<C> {
     content: Option<C>,
 }
 
-impl<C> Composition<C> {
+impl<C> Composition<C>
+where
+    C: Compose + Send + Sync + 'static,
+{
+    /// Create a new composition from its content.
     pub fn new(content: C) -> Self {
         Self {
             content: Some(content),
@@ -162,7 +205,7 @@ where
     }
 }
 
-pub fn compose(world: &mut World) {
+fn compose(world: &mut World) {
     let mut rt = world.non_send_resource_mut::<Runtime>();
     rt.lock = None;
 
@@ -258,6 +301,7 @@ pub fn use_world(cx: ScopeState) -> UseWorld {
 }
 
 impl UseWorld<'_> {
+    /// Get a resource by its type.
     pub fn resource<R: Resource + Clone>(&self) -> R {
         unsafe {
             RuntimeContext::current()
