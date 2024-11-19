@@ -321,8 +321,17 @@ pub struct Spawn {
 
 impl Compose for Spawn {
     fn compose(cx: Scope<Self>) -> impl Compose {
-        use_bundle_inner(&cx, |world, entity| {
+        let spawn_cx = use_context::<SpawnContext>(&cx);
+
+        let entity = use_bundle_inner(&cx, |world, entity| {
             (cx.me().spawn_fn)(world, entity);
+        });
+
+        use_ref(&cx, || {
+            if let Ok(parent_entity) = spawn_cx.map(|cx| cx.parent_entity) {
+                let world = unsafe { RuntimeContext::current().world_mut() };
+                world.entity_mut(parent_entity).add_child(entity);
+            }
         });
     }
 }
