@@ -41,8 +41,12 @@ use actuate::{
 };
 use bevy::{
     app::Plugin,
-    ecs::{component::StorageType, query::QueryData, system::SystemState, world::CommandQueue},
-    prelude::{App, BuildChildren, Bundle, Component, Entity, Query, Resource, World},
+    ecs::{
+        component::StorageType,
+        system::{SystemParam, SystemState},
+        world::CommandQueue,
+    },
+    prelude::{App, BuildChildren, Bundle, Component, Entity, Resource, World},
     utils::HashMap,
 };
 use slotmap::{DefaultKey, SlotMap};
@@ -314,23 +318,55 @@ pub fn use_world<'a>(cx: ScopeState<'a>, with_world: impl Fn(&mut World) + 'a) {
     });
 }
 
-/// Use a [`Query`] from the ECS world.
+/// A function that takes a [`SystemParam`] as input.
+pub trait SystemParamFunction<Marker> {
+    /// The [`SystemParam`].
+    type Param: SystemParam + 'static;
+
+    /// Run the function with the provided [`SystemParam`]'s item.
+    fn run(&self, param: <Self::Param as SystemParam>::Item<'_, '_>);
+}
+
+macro_rules! impl_system_param_fn {
+    ($($t:tt),*) => {
+        impl<$($t: SystemParam + 'static,)* F: Fn($($t::Item<'_, '_>),*)> SystemParamFunction<fn($($t),*)> for F {
+            type Param = ($($t,)*);
+
+            fn run(&self, param: <Self::Param as SystemParam>::Item<'_, '_>) {
+                #[allow(non_snake_case)]
+                let ($($t,)*) = param;
+                self($($t,)*)
+            }
+        }
+    };
+}
+
+impl_system_param_fn!(T1);
+impl_system_param_fn!(T1, T2);
+impl_system_param_fn!(T1, T2, T3);
+impl_system_param_fn!(T1, T2, T3, T4);
+impl_system_param_fn!(T1, T2, T3, T4, T5);
+impl_system_param_fn!(T1, T2, T3, T4, T5, T6);
+impl_system_param_fn!(T1, T2, T3, T4, T5, T6, T7);
+impl_system_param_fn!(T1, T2, T3, T4, T5, T6, T7, T8);
+
+/// Use a [`SystemParam`] from the ECS world.
 ///
-/// `with_query` will be called on every frame with the latest query.
+/// `with_param` will be called on every frame with the latest query.
 ///
 /// Change detection is implemented as a traditional system parameter.
-pub fn use_query<'a, D>(cx: ScopeState<'a>, with_query: impl Fn(Query<D>) + 'a)
+pub fn use_param<'a, Marker, F>(cx: ScopeState<'a>, with_param: F)
 where
-    D: QueryData + 'static,
+    F: SystemParamFunction<Marker> + 'a,
 {
     let system_state_cell = use_ref(cx, || RefCell::new(None));
 
     use_world(cx, move |world| {
         let mut system_state_cell = system_state_cell.borrow_mut();
         let system_state =
-            system_state_cell.get_or_insert_with(|| SystemState::<Query<D>>::new(world));
+            system_state_cell.get_or_insert_with(|| SystemState::<F::Param>::new(world));
         let query = system_state.get_mut(world);
-        with_query(query)
+        with_param.run(query)
     })
 }
 
