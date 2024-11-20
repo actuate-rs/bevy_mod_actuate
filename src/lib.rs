@@ -163,6 +163,7 @@ impl Default for Runtime {
 /// Composition of some composable content.
 pub struct Composition<C> {
     content: Option<C>,
+    target: Option<Entity>,
 }
 
 impl<C> Composition<C>
@@ -173,7 +174,46 @@ where
     pub fn new(content: C) -> Self {
         Self {
             content: Some(content),
+            target: None,
         }
+    }
+
+    /// Get the target entity to spawn the composition into.
+    ///
+    /// If `None`, this will use the composition's parent (if any).
+    pub fn target(&self) -> Option<Entity> {
+        self.target
+    }
+
+    /// Set the target entity to spawn the composition into.
+    ///
+    /// If `None`, this will use the composition's parent (if any).
+    pub fn set_target(&mut self, target: Option<Entity>) {
+        self.target = target;
+    }
+
+    /// Set the target entity to spawn the composition into.
+    ///
+    /// If `None`, this will use the composition's parent (if any).
+    pub fn with_target(mut self, target: Entity) -> Self {
+        self.target = Some(target);
+        self
+    }
+}
+
+#[derive(Data)]
+struct CompositionContent<C> {
+    content: C,
+    target: Entity,
+}
+
+impl<C: Compose> Compose for CompositionContent<C> {
+    fn compose(cx: Scope<Self>) -> impl Compose {
+        use_provider(&cx, || SpawnContext {
+            parent_entity: cx.me().target,
+        });
+
+        Ref::map(cx.me(), |me| &me.content)
     }
 }
 
@@ -185,11 +225,11 @@ where
     fn register_component_hooks(hooks: &mut bevy::ecs::component::ComponentHooks) {
         hooks.on_insert(|mut world, entity, _| {
             world.commands().queue(move |world: &mut World| {
-                let content = world
-                    .get_mut::<Composition<C>>(entity)
-                    .unwrap()
-                    .content
-                    .take();
+                let mut composition = world.get_mut::<Composition<C>>(entity).unwrap();
+
+                let content = composition.content.take().unwrap();
+
+                let target = composition.target.unwrap_or(entity);
 
                 let tx = world.non_send_resource::<Runtime>().tx.clone();
 
@@ -201,7 +241,7 @@ where
                         entity,
                         RuntimeComposer {
                             composer: Composer::with_updater(
-                                content,
+                                CompositionContent { content, target },
                                 RuntimeUpdater { queue: tx },
                                 tokio::runtime::Runtime::new().unwrap(),
                             ),
