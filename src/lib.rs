@@ -370,7 +370,7 @@ pub trait SystemParamFunction<Marker> {
 
 macro_rules! impl_system_param_fn {
     ($($t:tt),*) => {
-        impl<$($t: SystemParam + 'static,)* F: Fn($($t::Item<'_, '_>),*)> SystemParamFunction<fn($($t),*)> for F {
+        impl<$($t: SystemParam + 'static,)* F: Fn($($t),*) + Fn($($t::Item<'_, '_>),*)> SystemParamFunction<fn($($t),*)> for F {
             type Param = ($($t,)*);
 
             fn run(&self, param: <Self::Param as SystemParam>::Item<'_, '_>) {
