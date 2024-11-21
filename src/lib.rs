@@ -65,7 +65,7 @@ use tokio::sync::RwLockWriteGuard;
 /// Prelude of common items.
 pub mod prelude {
     pub use crate::{
-        spawn, spawn_with, use_bundle, use_resource, ActuatePlugin, Composition, UseResource,
+        spawn, spawn_with, use_bundle, use_resource, use_param, ActuatePlugin, Composition, UseResource,
         UseWorld,
     };
 }
