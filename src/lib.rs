@@ -42,7 +42,7 @@ use actuate::{
 use bevy::{
     app::Plugin,
     ecs::{
-        component::StorageType,
+        component::{ComponentHooks, StorageType},
         system::{SystemParam, SystemState},
         world::CommandQueue,
     },
@@ -163,6 +163,7 @@ impl Default for Runtime {
 /// Composition of some composable content.
 pub struct Composition<C> {
     content: Option<C>,
+    target: Option<Entity>,
 }
 
 impl<C> Composition<C>
@@ -173,7 +174,46 @@ where
     pub fn new(content: C) -> Self {
         Self {
             content: Some(content),
+            target: None,
         }
+    }
+
+    /// Get the target entity to spawn the composition into.
+    ///
+    /// If `None`, this will use the composition's parent (if any).
+    pub fn target(&self) -> Option<Entity> {
+        self.target
+    }
+
+    /// Set the target entity to spawn the composition into.
+    ///
+    /// If `None`, this will use the composition's parent (if any).
+    pub fn set_target(&mut self, target: Option<Entity>) {
+        self.target = target;
+    }
+
+    /// Set the target entity to spawn the composition into.
+    ///
+    /// If `None`, this will use the composition's parent (if any).
+    pub fn with_target(mut self, target: Entity) -> Self {
+        self.target = Some(target);
+        self
+    }
+}
+
+#[derive(Data)]
+struct CompositionContent<C> {
+    content: C,
+    target: Entity,
+}
+
+impl<C: Compose> Compose for CompositionContent<C> {
+    fn compose(cx: Scope<Self>) -> impl Compose {
+        use_provider(&cx, || SpawnContext {
+            parent_entity: cx.me().target,
+        });
+
+        Ref::map(cx.me(), |me| &me.content)
     }
 }
 
@@ -182,14 +222,15 @@ where
     C: Compose + Send + Sync + 'static,
 {
     const STORAGE_TYPE: StorageType = StorageType::SparseSet;
-    fn register_component_hooks(hooks: &mut bevy::ecs::component::ComponentHooks) {
+
+    fn register_component_hooks(hooks: &mut ComponentHooks) {
         hooks.on_insert(|mut world, entity, _| {
             world.commands().queue(move |world: &mut World| {
-                let content = world
-                    .get_mut::<Composition<C>>(entity)
-                    .unwrap()
-                    .content
-                    .take();
+                let mut composition = world.get_mut::<Composition<C>>(entity).unwrap();
+
+                let content = composition.content.take().unwrap();
+
+                let target = composition.target.unwrap_or(entity);
 
                 let tx = world.non_send_resource::<Runtime>().tx.clone();
 
@@ -201,7 +242,7 @@ where
                         entity,
                         RuntimeComposer {
                             composer: Composer::with_updater(
-                                content,
+                                CompositionContent { content, target },
                                 RuntimeUpdater { queue: tx },
                                 tokio::runtime::Runtime::new().unwrap(),
                             ),
@@ -472,45 +513,11 @@ type SpawnFn = Arc<dyn Fn(&mut World, &mut Option<Entity>)>;
 /// Create a [`Spawn`] composable that spawns the provided `bundle` when composed.
 ///
 /// On re-composition, the spawned entity is updated to the latest provided value.
-pub fn spawn<B>(bundle: B) -> Spawn
+pub fn spawn<B>(bundle: B) -> SpawnWith<()>
 where
     B: Bundle + Clone,
 {
-    Spawn {
-        spawn_fn: Arc::new(move |world, cell| {
-            if let Some(entity) = cell {
-                world.entity_mut(*entity).insert(bundle.clone());
-            } else {
-                *cell = Some(world.spawn(bundle.clone()).id())
-            }
-        }),
-    }
-}
-
-/// Spawn composable.
-///
-/// See [`spawn`] for more information.
-#[derive(Data)]
-#[must_use = "Composables do nothing unless composed with `actuate::run` or returned from other composables"]
-pub struct Spawn {
-    spawn_fn: SpawnFn,
-}
-
-impl Compose for Spawn {
-    fn compose(cx: Scope<Self>) -> impl Compose {
-        let spawn_cx = use_context::<SpawnContext>(&cx);
-
-        let entity = use_bundle_inner(&cx, |world, entity| {
-            (cx.me().spawn_fn)(world, entity);
-        });
-
-        use_ref(&cx, || {
-            if let Ok(parent_entity) = spawn_cx.map(|cx| cx.parent_entity) {
-                let world = unsafe { RuntimeContext::current().world_mut() };
-                world.entity_mut(parent_entity).add_child(entity);
-            }
-        });
-    }
+    spawn_with(bundle, ())
 }
 
 /// Create a [`Spawn`] composable that spawns the provided `bundle` when composed, with some content as its children.
@@ -530,6 +537,7 @@ where
             }
         }),
         content,
+        target: None,
     }
 }
 
@@ -541,6 +549,31 @@ where
 pub struct SpawnWith<C> {
     spawn_fn: SpawnFn,
     content: C,
+    target: Option<Entity>,
+}
+
+impl<C> SpawnWith<C> {
+    /// Get the target entity to spawn the composition into.
+    ///
+    /// If `None`, this will use the composition's parent (if any).
+    pub fn target(&self) -> Option<Entity> {
+        self.target
+    }
+
+    /// Set the target entity to spawn the composition into.
+    ///
+    /// If `None`, this will use the composition's parent (if any).
+    pub fn set_target(&mut self, target: Option<Entity>) {
+        self.target = target;
+    }
+
+    /// Set the target entity to spawn the composition into.
+    ///
+    /// If `None`, this will use the composition's parent (if any).
+    pub fn with_target(mut self, target: Entity) -> Self {
+        self.target = Some(target);
+        self
+    }
 }
 
 impl<C: Compose> Compose for SpawnWith<C> {
@@ -548,13 +581,19 @@ impl<C: Compose> Compose for SpawnWith<C> {
         let spawn_cx = use_context::<SpawnContext>(&cx);
 
         let entity = use_bundle_inner(&cx, |world, entity| {
+            if let Some(target) = cx.me().target {
+                *entity = Some(target);
+            }
+
             (cx.me().spawn_fn)(world, entity);
         });
 
         use_provider(&cx, || {
-            if let Ok(parent_entity) = spawn_cx.map(|cx| cx.parent_entity) {
-                let world = unsafe { RuntimeContext::current().world_mut() };
-                world.entity_mut(parent_entity).add_child(entity);
+            if cx.me().target.is_none() {
+                if let Ok(parent_entity) = spawn_cx.map(|cx| cx.parent_entity) {
+                    let world = unsafe { RuntimeContext::current().world_mut() };
+                    world.entity_mut(parent_entity).add_child(entity);
+                }
             }
 
             SpawnContext {

@@ -89,5 +89,5 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2d::default());
 
     // Spawn a composition with a `BreedList`, adding it to the Actuate runtime.
-    commands.spawn(Composition::new(BreedList));
+    commands.spawn((Node::default(), Composition::new(BreedList)));
 }
