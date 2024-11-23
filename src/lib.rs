@@ -56,7 +56,6 @@ use bevy::{
 };
 use slotmap::{DefaultKey, SlotMap};
 use std::{
-    any::TypeId,
     cell::RefCell,
     marker::PhantomData,
     mem, ptr,
@@ -120,11 +119,6 @@ impl Plugin for ActuatePlugin {
     }
 }
 
-struct Listener {
-    is_changed_fn: Box<dyn FnMut(&World) -> bool>,
-    fns: Vec<Box<dyn Fn()>>,
-}
-
 type UpdateFn = Box<dyn FnMut(&mut World)>;
 
 type WorldListenerFn = Rc<dyn Fn(&mut World)>;
@@ -132,7 +126,6 @@ type WorldListenerFn = Rc<dyn Fn(&mut World)>;
 struct Inner {
     world_ptr: *mut World,
     listeners: SlotMap<DefaultKey, WorldListenerFn>,
-    resource_listeners: HashMap<TypeId, Listener>,
     updates: Vec<UpdateFn>,
     commands: CommandQueue,
 }
@@ -291,32 +284,16 @@ fn compose(world: &mut World) {
             inner: Rc::new(RefCell::new(Inner {
                 world_ptr: ptr::null_mut(),
                 listeners: SlotMap::new(),
-                resource_listeners: HashMap::new(),
                 updates: Vec::new(),
                 commands: CommandQueue::default(),
             })),
         });
 
+        runtime_cx.inner.borrow_mut().world_ptr = world as *mut World;
+
         for f in runtime_cx.inner.borrow().listeners.values() {
             f(world)
         }
-        runtime_cx.inner.borrow_mut().listeners.clear();
-
-        for listener in runtime_cx
-            .inner
-            .borrow_mut()
-            .resource_listeners
-            .values_mut()
-        {
-            if (listener.is_changed_fn)(world) {
-                for f in &listener.fns {
-                    f();
-                }
-                listener.fns.clear();
-            }
-        }
-
-        runtime_cx.inner.borrow_mut().world_ptr = world as *mut World;
     });
 
     let rt = world.non_send_resource_mut::<Runtime>();
@@ -409,9 +386,10 @@ where
         with_param.run(query)
     })
     .clone();
-    let f: Rc<dyn Fn(&mut World)> = unsafe { mem::transmute(f) };
 
     let key = *use_ref(cx, || {
+        let f: Rc<dyn Fn(&mut World)> = unsafe { mem::transmute(f) };
+
         RuntimeContext::current()
             .inner
             .borrow_mut()
