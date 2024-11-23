@@ -8,6 +8,7 @@ repository = "https://github.com/actuate-rs/bevy_mod_actuate"
 
 [features]
 rt = ["actuate/rt"]
+full = ["rt"]
 
 [dependencies]
 actuate = { git = "https://github.com/actuate-rs/actuate" }
