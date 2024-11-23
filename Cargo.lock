@@ -62,8 +62,7 @@ dependencies = [
 [[package]]
 name = "actuate"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a006ecd4ac88789aa97dfd95cf4649db4d6ba0737f340282908608084d4b998"
+source = "git+https://github.com/actuate-rs/actuate#568f350c264906271548dbcf49eb7029175a0b4b"
 dependencies = [
  "actuate-macros",
  "slotmap",
@@ -75,8 +74,7 @@ dependencies = [
 [[package]]
 name = "actuate-macros"
 version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6daec0857824a34473984b1048cba75a05b42cb9fca8a5e97dc7ae587645490"
+source = "git+https://github.com/actuate-rs/actuate#568f350c264906271548dbcf49eb7029175a0b4b"
 dependencies = [
  "quote",
  "syn",

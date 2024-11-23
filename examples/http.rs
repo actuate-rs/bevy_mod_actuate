@@ -1,4 +1,4 @@
-use actuate::prelude::{Ref, *};
+use actuate::prelude::{Mut, Ref, *};
 use bevy::prelude::*;
 use bevy_mod_actuate::prelude::*;
 use serde::Deserialize;
@@ -62,7 +62,7 @@ impl Compose for BreedList {
                 .await
                 .unwrap();
 
-            breeds.update(|breeds| *breeds = json.message);
+            Mut::update(breeds, |breeds| *breeds = json.message);
         });
 
         // Render the currently loaded breeds.

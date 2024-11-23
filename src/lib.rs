@@ -46,7 +46,7 @@ use bevy::{
         system::{SystemParam, SystemState},
         world::CommandQueue,
     },
-    prelude::{App, BuildChildren, Bundle, Component, Entity, Resource, World},
+    prelude::{App, BuildChildren, Bundle, Component, Entity, World},
     utils::HashMap,
 };
 use slotmap::{DefaultKey, SlotMap};
@@ -54,9 +54,7 @@ use std::{
     any::TypeId,
     cell::RefCell,
     marker::PhantomData,
-    mem,
-    ops::Deref,
-    ptr,
+    mem, ptr,
     rc::Rc,
     sync::{mpsc, Arc},
 };
@@ -65,8 +63,7 @@ use tokio::sync::RwLockWriteGuard;
 /// Prelude of common items.
 pub mod prelude {
     pub use crate::{
-        spawn, spawn_with, use_bundle, use_param, use_resource, ActuatePlugin, Composition,
-        UseResource, UseWorld,
+        spawn, spawn_with, use_bundle, use_world, ActuatePlugin, Composition, UseWorld,
     };
 }
 
@@ -331,34 +328,6 @@ pub struct UseWorld<'a> {
     _marker: PhantomData<ScopeState<'a>>,
 }
 
-/// Use access to the current ECS world.
-///
-/// `with_world` will be called on every frame to update the composable.
-pub fn use_world<'a>(cx: ScopeState<'a>, with_world: impl Fn(&mut World) + 'a) {
-    // TODO
-    let f: Rc<dyn Fn(&'static mut World)> = use_callback(cx, move |world: &'static mut World| {
-        with_world(world);
-    })
-    .clone();
-    let f: Rc<dyn Fn(&mut World)> = unsafe { mem::transmute(f) };
-
-    let key = *use_ref(cx, || {
-        RuntimeContext::current()
-            .inner
-            .borrow_mut()
-            .listeners
-            .insert(f)
-    });
-
-    use_drop(cx, move || {
-        RuntimeContext::current()
-            .inner
-            .borrow_mut()
-            .listeners
-            .remove(key);
-    });
-}
-
 /// A function that takes a [`SystemParam`] as input.
 pub trait SystemParamFunction<Marker> {
     /// The [`SystemParam`].
@@ -396,98 +365,37 @@ impl_system_param_fn!(T1, T2, T3, T4, T5, T6, T7, T8);
 /// `with_param` will be called on every frame with the latest query.
 ///
 /// Change detection is implemented as a traditional system parameter.
-pub fn use_param<'a, Marker, F>(cx: ScopeState<'a>, with_param: F)
+pub fn use_world<'a, Marker, F>(cx: ScopeState<'a>, with_param: F)
 where
     F: SystemParamFunction<Marker> + 'a,
 {
     let system_state_cell = use_ref(cx, || RefCell::new(None));
 
-    use_world(cx, move |world| {
+    let f: Rc<dyn Fn(&'static mut World)> = use_callback(cx, move |world: &'static mut World| {
         let mut system_state_cell = system_state_cell.borrow_mut();
         let system_state =
             system_state_cell.get_or_insert_with(|| SystemState::<F::Param>::new(world));
         let query = system_state.get_mut(world);
         with_param.run(query)
     })
-}
+    .clone();
+    let f: Rc<dyn Fn(&mut World)> = unsafe { mem::transmute(f) };
 
-/// Use a [`Resource`] from the ECS world.
-///
-/// Changing a resource tracked with this hook will cause the composable to re-compose.
-pub fn use_resource<R>(cx: ScopeState) -> UseResource<R>
-where
-    R: Resource + Clone,
-{
-    let world = unsafe { RuntimeContext::current().world_mut() };
-
-    let value = use_mut(cx, || world.resource::<R>().clone());
-
-    let f: Box<dyn Fn()> = Box::new(move || {
-        let new = world.resource::<R>().clone();
-        value.update(move |value| *value = new);
+    let key = *use_ref(cx, || {
+        RuntimeContext::current()
+            .inner
+            .borrow_mut()
+            .listeners
+            .insert(f)
     });
-    let f: Box<dyn Fn()> = unsafe { mem::transmute(f) };
 
-    let rt_cx = RuntimeContext::current();
-    let mut rt = rt_cx.inner.borrow_mut();
-
-    if let Some(listener) = rt.resource_listeners.get_mut(&TypeId::of::<R>()) {
-        listener.fns.push(f);
-    } else {
-        let mut cell = None;
-        rt.resource_listeners.insert(
-            TypeId::of::<R>(),
-            Listener {
-                is_changed_fn: Box::new(move |world| {
-                    let current_tick = world.read_change_tick();
-                    world.last_change_tick();
-
-                    let last_changed_tick = world
-                        .get_resource_change_ticks::<R>()
-                        .unwrap()
-                        .last_changed_tick();
-
-                    if let Some(ref mut tick) = cell {
-                        if last_changed_tick.is_newer_than(*tick, current_tick) {
-                            *tick = current_tick;
-                            true
-                        } else {
-                            false
-                        }
-                    } else {
-                        cell = Some(current_tick);
-                        true
-                    }
-                }),
-                fns: vec![f],
-            },
-        );
-    }
-
-    UseResource {
-        value: value.as_ref(),
-    }
-}
-
-/// Hook for [`use_resource`].
-pub struct UseResource<'a, R> {
-    value: Ref<'a, R>,
-}
-
-impl<R> Clone for UseResource<'_, R> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<R> Copy for UseResource<'_, R> {}
-
-impl<R> Deref for UseResource<'_, R> {
-    type Target = R;
-
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
+    use_drop(cx, move || {
+        RuntimeContext::current()
+            .inner
+            .borrow_mut()
+            .listeners
+            .remove(key);
+    });
 }
 
 struct SpawnContext {
