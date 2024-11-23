@@ -22,7 +22,7 @@ impl Compose for Timer {
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, ActuatePlugin))
+        .add_plugins((DefaultPlugins, ActuatePlugin::new()))
         .add_systems(Startup, setup)
         .run();
 }

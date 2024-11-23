@@ -39,9 +39,10 @@
 //! ```
 
 #![deny(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use actuate::{
-    composer::{Composer, Update, Updater},
+    composer::{Composer, Executor, Update, Updater},
     prelude::*,
     use_callback,
 };
@@ -74,11 +75,49 @@ pub mod prelude {
 }
 
 /// Actuate plugin to run [`Composition`]s.
-pub struct ActuatePlugin;
+pub struct ActuatePlugin {
+    executor: Arc<dyn Executor + Send + Sync>,
+}
+
+#[cfg(feature = "rt")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rt")))]
+impl Default for ActuatePlugin {
+    fn default() -> Self {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        Self {
+            executor: Arc::new(rt),
+        }
+    }
+}
+
+impl ActuatePlugin {
+    #[cfg(feature = "rt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rt")))]
+    /// Create the default Actuate plugin.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a new Actuate plugin with the provided executor.
+    pub fn from_executor(executor: impl Executor + Send + Sync + 'static) -> Self {
+        Self {
+            executor: Arc::new(executor),
+        }
+    }
+}
 
 impl Plugin for ActuatePlugin {
     fn build(&self, app: &mut App) {
-        app.init_non_send_resource::<Runtime>()
+        let (tx, rx) = mpsc::channel();
+        let rt = Runtime {
+            composers: RefCell::new(HashMap::new()),
+            lock: None,
+            tx,
+            rx,
+            executor: self.executor.clone(),
+        };
+
+        app.insert_non_send_resource(rt)
             .add_systems(bevy::prelude::Update, compose);
     }
 }
@@ -149,18 +188,7 @@ struct Runtime {
     lock: Option<RwLockWriteGuard<'static, ()>>,
     tx: mpsc::Sender<Update>,
     rx: mpsc::Receiver<Update>,
-}
-
-impl Default for Runtime {
-    fn default() -> Self {
-        let (tx, rx) = mpsc::channel();
-        Self {
-            composers: RefCell::new(HashMap::new()),
-            lock: None,
-            tx,
-            rx,
-        }
-    }
+    executor: Arc<dyn Executor>,
 }
 
 /// Composition of some composable content.
@@ -237,21 +265,19 @@ where
 
                 let tx = world.non_send_resource::<Runtime>().tx.clone();
 
-                world
-                    .non_send_resource_mut::<Runtime>()
-                    .composers
-                    .borrow_mut()
-                    .insert(
-                        entity,
-                        RuntimeComposer {
-                            composer: Composer::with_updater(
-                                CompositionContent { content, target },
-                                RuntimeUpdater { queue: tx },
-                                tokio::runtime::Runtime::new().unwrap(),
-                            ),
-                            guard: None,
-                        },
-                    );
+                let rt = world.non_send_resource_mut::<Runtime>();
+                let executor = rt.executor.clone();
+                rt.composers.borrow_mut().insert(
+                    entity,
+                    RuntimeComposer {
+                        composer: Composer::with_updater(
+                            CompositionContent { content, target },
+                            RuntimeUpdater { queue: tx },
+                            executor,
+                        ),
+                        guard: None,
+                    },
+                );
             });
         });
     }

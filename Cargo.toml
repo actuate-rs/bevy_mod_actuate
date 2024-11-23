@@ -6,8 +6,11 @@ license = "MIT OR Apache-2.0"
 description = "A reactive user-interface framework"
 repository = "https://github.com/actuate-rs/bevy_mod_actuate"
 
+[features]
+rt = ["actuate/rt"]
+
 [dependencies]
-actuate = { git = "https://github.com/actuate-rs/actuate", features = ["rt"] }
+actuate = { git = "https://github.com/actuate-rs/actuate" }
 bevy = "0.15.0-rc.3"
 slotmap = "1.0.7"
 tokio = { version = "1.41.1", features = ["sync"] }
@@ -15,3 +18,15 @@ tokio = { version = "1.41.1", features = ["sync"] }
 [dev-dependencies]
 reqwest = { version = "0.12.9", features = ["json"] }
 serde = { version = "1.0.215", features = ["derive"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[[example]]
+name = "http"
+required-features = ["rt"]
+
+[[example]]
+name = "timer"
+required-features = ["rt"]
