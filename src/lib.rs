@@ -3,7 +3,7 @@
 //! Declarative scenes and reactivity for [Bevy](https://crates.io/crates/bevy) powered by [Actuate](https://crates.io/crates/actuate).
 //!
 //! ```no_run
-//! use actuate::prelude::*;
+//! use actuate::prelude::{*, Mut};
 //! use bevy::prelude::*;
 //! use bevy_mod_actuate::prelude::*;
 //!
@@ -12,10 +12,16 @@
 //!
 //! impl Compose for Timer {
 //!     fn compose(cx: Scope<Self>) -> impl Compose {
-//!         let time = use_resource::<Time>(&cx);
+//!         let current_time = use_mut(&cx, Time::default);
 //!
-//!         spawn(Text::new(format!("Elapsed: {:?}", time.elapsed())))
-//!     }
+//!         // Use the `Time` resource from the ECS world, updating the `current_time`.
+//!         use_world(&cx, move |time: Res<Time>| {
+//!             Mut::set(current_time, *time);
+//!         });
+//!
+//!         // Spawn a `Text` component, updating it when this scope is re-composed.
+//!         spawn(Text::new(format!("Elapsed: {:?}", current_time.elapsed())))
+//!    }
 //! }
 //!
 //! fn main() {

@@ -8,10 +8,9 @@ struct Timer;
 
 impl Compose for Timer {
     fn compose(cx: Scope<Self>) -> impl Compose {
-        // Use the `Time` resource from the ECS world.
-        // Changing a resource tracked with `use_resource` will cause the composable to re-compose.
         let current_time = use_mut(&cx, Time::default);
 
+        // Use the `Time` resource from the ECS world, updating the `current_time`.
         use_world(&cx, move |time: Res<Time>| {
             Mut::set(current_time, *time);
         });

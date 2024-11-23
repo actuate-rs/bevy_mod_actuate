@@ -25,7 +25,7 @@
 Declarative scenes and reactivity for [Bevy](https://github.com/bevyengine/bevy) powered by [Actuate](https://github.com/actuate-rs/actuate).
 
 ```rs
-use actuate::prelude::*;
+use actuate::prelude::{*, Mut};
 use bevy::prelude::*;
 use bevy_mod_actuate::prelude::*;
 
@@ -35,12 +35,15 @@ struct Timer;
 
 impl Compose for Timer {
     fn compose(cx: Scope<Self>) -> impl Compose {
-        // Use the `Time` resource from the ECS world.
-        // Changing a resource tracked with `use_resource` will cause the composable to re-compose.
-        let time = use_resource::<Time>(&cx);
+        let current_time = use_mut(&cx, Time::default);
+
+        // Use the `Time` resource from the ECS world, updating the `current_time`.
+        use_world(&cx, move |time: Res<Time>| {
+            Mut::set(current_time, *time);
+        });
 
         // Spawn a `Text` component, updating it when this scope is re-composed.
-        spawn(Text::new(format!("Elapsed: {:?}", time.elapsed())))
+        spawn(Text::new(format!("Elapsed: {:?}", current_time.elapsed())))
     }
 }
 
