@@ -73,7 +73,10 @@ impl Compose for BreedList {
                 overflow: Overflow::scroll_y(),
                 ..default()
             },
-            compose::from_iter(breeds, |(name, families)| Breed { name, families }),
+            compose::from_iter(breeds, |breed| Breed {
+                name: breed.0,
+                families: breed.1,
+            }),
         )
     }
 }
