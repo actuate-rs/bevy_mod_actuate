@@ -24,7 +24,7 @@
 //!
 //! fn main() {
 //!     App::new()
-//!         .add_plugins((DefaultPlugins, ActuatePlugin::new()))
+//!         .add_plugins((DefaultPlugins, ActuatePlugin))
 //!         .add_systems(Startup, setup)
 //!         .run();
 //! }

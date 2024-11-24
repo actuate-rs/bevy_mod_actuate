@@ -1,19 +1,19 @@
 [package]
 name = "bevy_mod_actuate"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "A reactive user-interface framework"
 repository = "https://github.com/actuate-rs/bevy_mod_actuate"
 
 [dependencies]
-actuate = { git = "https://github.com/actuate-rs/actuate" }
+actuate = "0.8.0"
 bevy = "0.15.0-rc.3"
 slotmap = "1.0.7"
 tokio = { version = "1.41.1", features = ["sync"] }
 
 [dev-dependencies]
-actuate = { git = "https://github.com/actuate-rs/actuate", features = ["rt"] }
+actuate = { version = "0.8.0", features = ["rt"] }
 reqwest = { version = "0.12.9", features = ["json"] }
 serde = { version = "1.0.215", features = ["derive"] }
 

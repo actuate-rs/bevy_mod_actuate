@@ -61,8 +61,9 @@ dependencies = [
 
 [[package]]
 name = "actuate"
-version = "0.7.0"
-source = "git+https://github.com/actuate-rs/actuate#de49ba5cc3a28c972da4faf87a520eccfcbf9d8f"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efe6f9294357590a694d81fefb43eb90ef9ae3aeebaa28fdc1eb91dce04b3d56"
 dependencies = [
  "actuate-macros",
  "slotmap",
@@ -74,7 +75,8 @@ dependencies = [
 [[package]]
 name = "actuate-macros"
 version = "0.1.5"
-source = "git+https://github.com/actuate-rs/actuate#de49ba5cc3a28c972da4faf87a520eccfcbf9d8f"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6daec0857824a34473984b1048cba75a05b42cb9fca8a5e97dc7ae587645490"
 dependencies = [
  "quote",
  "syn",
@@ -906,7 +908,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_mod_actuate"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "actuate",
  "bevy",
