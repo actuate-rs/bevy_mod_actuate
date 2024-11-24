@@ -336,10 +336,10 @@ impl_system_param_fn!(T1, T2, T3, T4, T5, T6, T7, T8);
 
 /// Use a [`SystemParam`] from the ECS world.
 ///
-/// `with_param` will be called on every frame with the latest query.
+/// `with_world` will be called on every frame with the latest query.
 ///
 /// Change detection is implemented as a traditional system parameter.
-pub fn use_world<'a, Marker, F>(cx: ScopeState<'a>, with_param: F)
+pub fn use_world<'a, Marker, F>(cx: ScopeState<'a>, with_world: F)
 where
     F: SystemParamFunction<Marker> + 'a,
 {
@@ -350,7 +350,7 @@ where
         let system_state =
             system_state_cell.get_or_insert_with(|| SystemState::<F::Param>::new(world));
         let query = system_state.get_mut(world);
-        with_param.run(query)
+        with_world.run(query)
     })
     .clone();
 
@@ -371,6 +371,58 @@ where
             .listeners
             .remove(key);
     });
+}
+
+/// A function that takes a [`SystemParam`] as input.
+pub trait SystemParamFunctionOnce<Marker> {
+    /// The [`SystemParam`].
+    type Param: SystemParam + 'static;
+
+    /// The return type of this function.
+    type Output: 'static;
+
+    /// Run the function with the provided [`SystemParam`]'s item.
+    fn run(self, param: <Self::Param as SystemParam>::Item<'_, '_>) -> Self::Output;
+}
+
+macro_rules! impl_system_param_fn_once {
+    ($($t:tt),*) => {
+        impl<$($t: SystemParam + 'static,)* R: 'static, F: FnOnce($($t),*) -> R + FnOnce($($t::Item<'_, '_>),*) -> R> SystemParamFunctionOnce<fn($($t),*)> for F {
+            type Param = ($($t,)*);
+
+            type Output = R;
+
+            fn run(self, param: <Self::Param as SystemParam>::Item<'_, '_>) -> Self::Output {
+                #[allow(non_snake_case)]
+                let ($($t,)*) = param;
+                self($($t,)*)
+            }
+        }
+    };
+}
+
+impl_system_param_fn_once!(T1);
+impl_system_param_fn_once!(T1, T2);
+impl_system_param_fn_once!(T1, T2, T3);
+impl_system_param_fn_once!(T1, T2, T3, T4);
+impl_system_param_fn_once!(T1, T2, T3, T4, T5);
+impl_system_param_fn_once!(T1, T2, T3, T4, T5, T6);
+impl_system_param_fn_once!(T1, T2, T3, T4, T5, T6, T7);
+impl_system_param_fn_once!(T1, T2, T3, T4, T5, T6, T7, T8);
+
+/// Use a [`SystemParam`] from the ECS world.
+///
+/// `with_world` will be called once during the first composition.
+pub fn use_world_once<Marker, F>(cx: ScopeState, with_world: F) -> &F::Output
+where
+    F: SystemParamFunctionOnce<Marker>,
+{
+    use_ref(cx, || {
+        let world = unsafe { RuntimeContext::current().world_mut() };
+        let mut param = SystemState::<F::Param>::new(world);
+        let item = param.get_mut(world);
+        with_world.run(item)
+    })
 }
 
 /// Hook for [`use_commands`].
