@@ -1,4 +1,7 @@
-use actuate::prelude::{Mut, Ref, *};
+use actuate::{
+    executor::ExecutorContext,
+    prelude::{Mut, Ref, *},
+};
 use bevy::prelude::*;
 use bevy_mod_actuate::prelude::*;
 use serde::Deserialize;
@@ -81,9 +84,21 @@ impl Compose for BreedList {
     }
 }
 
+#[derive(Data)]
+struct Example;
+
+impl Compose for Example {
+    fn compose(cx: Scope<Self>) -> impl Compose {
+        // Setup the Tokio executor.
+        use_provider(&cx, ExecutorContext::default);
+
+        BreedList
+    }
+}
+
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, ActuatePlugin::new()))
+        .add_plugins((DefaultPlugins, ActuatePlugin))
         .add_systems(Startup, setup)
         .run();
 }
@@ -92,5 +107,5 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2d::default());
 
     // Spawn a composition with a `BreedList`, adding it to the Actuate runtime.
-    commands.spawn((Node::default(), Composition::new(BreedList)));
+    commands.spawn((Node::default(), Composition::new(Example)));
 }

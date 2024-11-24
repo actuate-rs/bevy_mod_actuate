@@ -40,7 +40,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 use actuate::{
-    composer::{Composer, Executor, Update, Updater},
+    composer::{Composer, Update, Updater},
     prelude::*,
     use_callback,
 };
@@ -72,36 +72,7 @@ pub mod prelude {
 }
 
 /// Actuate plugin to run [`Composition`]s.
-pub struct ActuatePlugin {
-    executor: Arc<dyn Executor + Send + Sync>,
-}
-
-#[cfg(feature = "rt")]
-#[cfg_attr(docsrs, doc(cfg(feature = "rt")))]
-impl Default for ActuatePlugin {
-    fn default() -> Self {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        Self {
-            executor: Arc::new(rt),
-        }
-    }
-}
-
-impl ActuatePlugin {
-    #[cfg(feature = "rt")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rt")))]
-    /// Create the default Actuate plugin.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Create a new Actuate plugin with the provided executor.
-    pub fn from_executor(executor: impl Executor + Send + Sync + 'static) -> Self {
-        Self {
-            executor: Arc::new(executor),
-        }
-    }
-}
+pub struct ActuatePlugin;
 
 impl Plugin for ActuatePlugin {
     fn build(&self, app: &mut App) {
@@ -111,7 +82,6 @@ impl Plugin for ActuatePlugin {
             lock: None,
             tx,
             rx,
-            executor: self.executor.clone(),
         };
 
         app.insert_non_send_resource(rt)
@@ -179,7 +149,6 @@ struct Runtime {
     lock: Option<RwLockWriteGuard<'static, ()>>,
     tx: mpsc::Sender<Update>,
     rx: mpsc::Receiver<Update>,
-    executor: Arc<dyn Executor>,
 }
 
 /// Composition of some composable content.
@@ -257,14 +226,12 @@ where
                 let tx = world.non_send_resource::<Runtime>().tx.clone();
 
                 let rt = world.non_send_resource_mut::<Runtime>();
-                let executor = rt.executor.clone();
                 rt.composers.borrow_mut().insert(
                     entity,
                     RuntimeComposer {
                         composer: Composer::with_updater(
                             CompositionContent { content, target },
                             RuntimeUpdater { queue: tx },
-                            executor,
                         ),
                         guard: None,
                     },

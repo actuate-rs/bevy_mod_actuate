@@ -62,7 +62,7 @@ dependencies = [
 [[package]]
 name = "actuate"
 version = "0.7.0"
-source = "git+https://github.com/actuate-rs/actuate#09c3ecf3cd38e3453f3d43cf807ba603ccfda21f"
+source = "git+https://github.com/actuate-rs/actuate#de49ba5cc3a28c972da4faf87a520eccfcbf9d8f"
 dependencies = [
  "actuate-macros",
  "slotmap",
@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "actuate-macros"
 version = "0.1.5"
-source = "git+https://github.com/actuate-rs/actuate#09c3ecf3cd38e3453f3d43cf807ba603ccfda21f"
+source = "git+https://github.com/actuate-rs/actuate#de49ba5cc3a28c972da4faf87a520eccfcbf9d8f"
 dependencies = [
  "quote",
  "syn",
