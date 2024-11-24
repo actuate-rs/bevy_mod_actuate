@@ -51,7 +51,7 @@ use bevy::{
         system::{SystemParam, SystemState},
         world::CommandQueue,
     },
-    prelude::{App, BuildChildren, Bundle, Component, Entity, World},
+    prelude::{App, BuildChildren, Bundle, Command, Component, Entity, World},
     utils::HashMap,
 };
 use slotmap::{DefaultKey, SlotMap};
@@ -97,7 +97,7 @@ struct Inner {
     world_ptr: *mut World,
     listeners: SlotMap<DefaultKey, WorldListenerFn>,
     updates: Vec<UpdateFn>,
-    commands: CommandQueue,
+    commands: Rc<RefCell<CommandQueue>>,
 }
 
 #[derive(Clone)]
@@ -252,7 +252,7 @@ fn compose(world: &mut World) {
                 world_ptr: ptr::null_mut(),
                 listeners: SlotMap::new(),
                 updates: Vec::new(),
-                commands: CommandQueue::default(),
+                commands: Rc::new(RefCell::new(CommandQueue::default())),
             })),
         });
 
@@ -285,7 +285,7 @@ fn compose(world: &mut World) {
 
         rt.updates.clear();
 
-        rt.commands.apply(world);
+        rt.commands.borrow_mut().apply(world);
     }
 
     let rt = &mut *world.non_send_resource_mut::<Runtime>();
@@ -371,6 +371,29 @@ where
             .listeners
             .remove(key);
     });
+}
+
+/// Hook for [`use_commands`].
+pub struct UseCommands {
+    commands: Rc<RefCell<CommandQueue>>,
+}
+
+impl UseCommands {
+    /// Push a [`Command`] to the command queue.
+    pub fn push<C>(&mut self, command: C)
+    where
+        C: Command,
+    {
+        self.commands.borrow_mut().push(command);
+    }
+}
+
+/// Use access to the current [`Command`] queue.
+pub fn use_commands(cx: ScopeState) -> &UseCommands {
+    use_ref(cx, || {
+        let commands = RuntimeContext::current().inner.borrow().commands.clone();
+        UseCommands { commands }
+    })
 }
 
 struct SpawnContext {
