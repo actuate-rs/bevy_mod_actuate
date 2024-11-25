@@ -48,10 +48,10 @@ use bevy::{
     app::Plugin,
     ecs::{
         component::{ComponentHooks, StorageType},
-        system::{SystemParam, SystemState},
+        system::{SystemParam, SystemParamItem, SystemState},
         world::CommandQueue,
     },
-    prelude::{App, BuildChildren, Bundle, Command, Component, Entity, World},
+    prelude::{App, BuildChildren, Bundle, Command, Component, Entity, In, World},
     utils::HashMap,
 };
 use slotmap::{DefaultKey, SlotMap};
@@ -303,23 +303,73 @@ pub struct UseWorld<'a> {
 }
 
 /// A function that takes a [`SystemParam`] as input.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a valid system",
+    label = "invalid system"
+)]
 pub trait SystemParamFunction<Marker> {
+    /// The input type to this system. See [`System::In`].
+    type In;
+
+    /// The return type of this system. See [`System::Out`].
+    type Out;
+
     /// The [`SystemParam`].
     type Param: SystemParam + 'static;
 
     /// Run the function with the provided [`SystemParam`]'s item.
-    fn run(&self, param: <Self::Param as SystemParam>::Item<'_, '_>);
+    fn run(&mut self, input: Self::In, param_value: SystemParamItem<Self::Param>) -> Self::Out;
 }
+
+#[doc(hidden)]
+pub struct Wrap<T>(T);
 
 macro_rules! impl_system_param_fn {
     ($($t:tt),*) => {
-        impl<$($t: SystemParam + 'static,)* F: Fn($($t),*) + Fn($($t::Item<'_, '_>),*)> SystemParamFunction<fn($($t),*)> for F {
+        impl<Out, Func, $($t: SystemParam + 'static),*> SystemParamFunction<Wrap<fn($($t,)*) -> Out>> for Func
+        where
+        for <'a> &'a mut Func:
+                FnMut($($t),*) -> Out +
+                FnMut($(SystemParamItem<$t>),*) -> Out, Out: 'static
+        {
+            type In = ();
+            type Out = Out;
             type Param = ($($t,)*);
 
-            fn run(&self, param: <Self::Param as SystemParam>::Item<'_, '_>) {
-                #[allow(non_snake_case)]
-                let ($($t,)*) = param;
-                self($($t,)*)
+            #[inline]
+            #[allow(non_snake_case)]
+            fn run(&mut self, _input: (), param_value: SystemParamItem< ($($t,)*)>) -> Out {
+                #[allow(clippy::too_many_arguments)]
+                fn call_inner<Out, $($t,)*>(mut f: impl FnMut($($t,)*) -> Out, $($t: $t,)*)->Out{
+                    f($($t,)*)
+                }
+                let ($($t,)*) = param_value;
+                call_inner(self, $($t),*)
+            }
+        }
+
+        #[allow(non_snake_case)]
+        impl<Input, Out, Func, $($t: SystemParam + 'static),*> SystemParamFunction<fn(In<Input>, $($t,)*) -> Out> for Func
+        where
+        for <'a> &'a mut Func:
+                FnMut(In<Input>, $($t),*) -> Out +
+                FnMut(In<Input>, $(SystemParamItem<$t>),*) -> Out, Out: 'static
+        {
+            type In = Input;
+            type Out = Out;
+            type Param = ($($t,)*);
+            #[inline]
+            fn run(&mut self, input: Input, param_value: SystemParamItem< ($($t,)*)>) -> Out {
+                #[allow(clippy::too_many_arguments)]
+                fn call_inner<Input, Out, $($t,)*>(
+                    mut f: impl FnMut(In<Input>, $($t,)*)->Out,
+                    input: In<Input>,
+                    $($t: $t,)*
+                )->Out{
+                    f(input, $($t,)*)
+                }
+                let ($($t,)*) = param_value;
+                call_inner(self, In(input), $($t),*)
             }
         }
     };
@@ -339,9 +389,9 @@ impl_system_param_fn!(T1, T2, T3, T4, T5, T6, T7, T8);
 /// `with_world` will be called on every frame with the latest query.
 ///
 /// Change detection is implemented as a traditional system parameter.
-pub fn use_world<'a, Marker, F>(cx: ScopeState<'a>, with_world: F)
+pub fn use_world<'a, Marker, F>(cx: ScopeState<'a>, mut with_world: F)
 where
-    F: SystemParamFunction<Marker> + 'a,
+    F: SystemParamFunction<Marker, In = (), Out = ()> + 'a,
 {
     let system_state_cell = use_ref(cx, || RefCell::new(None));
 
@@ -350,7 +400,7 @@ where
         let system_state =
             system_state_cell.get_or_insert_with(|| SystemState::<F::Param>::new(world));
         let query = system_state.get_mut(world);
-        with_world.run(query)
+        with_world.run((), query)
     })
     .clone();
 
