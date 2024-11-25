@@ -51,12 +51,15 @@ use bevy::{
         system::{SystemParam, SystemParamItem, SystemState},
         world::CommandQueue,
     },
-    prelude::{App, BuildChildren, Bundle, Command, Component, Entity, In, World},
+    prelude::{
+        App, BuildChildren, Bundle, Command, Component, Entity, EntityWorldMut, Event, In,
+        ParamSet, Trigger, World,
+    },
     utils::HashMap,
 };
 use slotmap::{DefaultKey, SlotMap};
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     marker::PhantomData,
     mem, ptr,
     rc::Rc,
@@ -375,6 +378,7 @@ macro_rules! impl_system_param_fn {
     };
 }
 
+impl_system_param_fn!();
 impl_system_param_fn!(T1);
 impl_system_param_fn!(T1, T2);
 impl_system_param_fn!(T1, T2, T3);
@@ -521,7 +525,7 @@ type SpawnFn = Arc<dyn Fn(&mut World, &mut Option<Entity>)>;
 /// Create a [`Spawn`] composable that spawns the provided `bundle` when composed.
 ///
 /// On re-composition, the spawned entity is updated to the latest provided value.
-pub fn spawn<B>(bundle: B) -> SpawnWith<()>
+pub fn spawn<'a, B>(bundle: B) -> SpawnWith<'a, ()>
 where
     B: Bundle + Clone,
 {
@@ -531,7 +535,7 @@ where
 /// Create a [`Spawn`] composable that spawns the provided `bundle` when composed, with some content as its children.
 ///
 /// On re-composition, the spawned entity is updated to the latest provided value.
-pub fn spawn_with<B, C>(bundle: B, content: C) -> SpawnWith<C>
+pub fn spawn_with<'a, B, C>(bundle: B, content: C) -> SpawnWith<'a, C>
 where
     B: Bundle + Clone,
     C: Compose,
@@ -546,21 +550,22 @@ where
         }),
         content,
         target: None,
+        observer_fns: Vec::new(),
     }
 }
 
 /// Spawn composable with content.
 ///
 /// See [`spawn_with`] for more information.
-#[derive(Data)]
 #[must_use = "Composables do nothing unless composed with `actuate::run` or returned from other composables"]
-pub struct SpawnWith<C> {
+pub struct SpawnWith<'a, C> {
     spawn_fn: SpawnFn,
     content: C,
     target: Option<Entity>,
+    observer_fns: Vec<Box<dyn Fn(&mut EntityWorldMut) + 'a>>,
 }
 
-impl<C> SpawnWith<C> {
+impl<'a, C> SpawnWith<'a, C> {
     /// Get the target entity to spawn the composition into.
     ///
     /// If `None`, this will use the composition's parent (if any).
@@ -582,18 +587,61 @@ impl<C> SpawnWith<C> {
         self.target = Some(target);
         self
     }
+
+    /// Add an observer to the spawned entity.
+    pub fn observe<F, E, B, Marker>(mut self, observer: F) -> Self
+    where
+        F: SystemParamFunction<Marker, In = Trigger<'static, E, B>, Out = ()> + Send + Sync + 'a,
+        E: Event,
+        B: Bundle,
+    {
+        let cell = Cell::new(Some(observer));
+        self.observer_fns.push(Box::new(move |entity| {
+            let mut observer = cell.take().unwrap();
+
+            type SpawnObserveFn<'a, F, E, B, Marker> = Box<
+                dyn FnMut(
+                        Trigger<'_, E, B>,
+                        ParamSet<'_, '_, (<F as SystemParamFunction<Marker>>::Param,)>,
+                    ) + Send
+                    + Sync
+                    + 'a,
+            >;
+
+            let f: SpawnObserveFn<'a, F, E, B, Marker> = Box::new(move |trigger, mut params| {
+                let trigger = unsafe { mem::transmute(trigger) };
+                observer.run(trigger, params.p0())
+            });
+            let f: SpawnObserveFn<'static, F, E, B, Marker> = unsafe { mem::transmute(f) };
+
+            entity.observe(f);
+        }));
+        self
+    }
 }
 
-impl<C: Compose> Compose for SpawnWith<C> {
+unsafe impl<C: Data> Data for SpawnWith<'_, C> {}
+
+impl<C: Compose> Compose for SpawnWith<'_, C> {
     fn compose(cx: Scope<Self>) -> impl Compose {
         let spawn_cx = use_context::<SpawnContext>(&cx);
 
+        let is_initial = use_ref(&cx, || Cell::new(true));
         let entity = use_bundle_inner(&cx, |world, entity| {
             if let Some(target) = cx.me().target {
                 *entity = Some(target);
             }
 
             (cx.me().spawn_fn)(world, entity);
+
+            if is_initial.get() {
+                let mut entity_mut = world.entity_mut(entity.unwrap());
+                for f in &cx.me().observer_fns {
+                    f(&mut entity_mut);
+                }
+
+                is_initial.set(false);
+            }
         });
 
         use_provider(&cx, || {
