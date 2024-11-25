@@ -22,6 +22,9 @@
 
 <br />
 
+## Depreciated:
+[Actuate](https://github.com/actuate-rs/actuate) now supports `Bevy` by default!
+
 Declarative scenes and reactivity for [Bevy](https://github.com/bevyengine/bevy) powered by [Actuate](https://github.com/actuate-rs/actuate).
 
 ```rs
