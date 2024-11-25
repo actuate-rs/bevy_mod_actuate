@@ -525,7 +525,7 @@ type SpawnFn = Arc<dyn Fn(&mut World, &mut Option<Entity>)>;
 /// Create a [`Spawn`] composable that spawns the provided `bundle` when composed.
 ///
 /// On re-composition, the spawned entity is updated to the latest provided value.
-pub fn spawn<'a, B>(bundle: B) -> SpawnWith<'a, ()>
+pub fn spawn<'a, B>(bundle: B) -> Spawn<'a, ()>
 where
     B: Bundle + Clone,
 {
@@ -535,12 +535,12 @@ where
 /// Create a [`Spawn`] composable that spawns the provided `bundle` when composed, with some content as its children.
 ///
 /// On re-composition, the spawned entity is updated to the latest provided value.
-pub fn spawn_with<'a, B, C>(bundle: B, content: C) -> SpawnWith<'a, C>
+pub fn spawn_with<'a, B, C>(bundle: B, content: C) -> Spawn<'a, C>
 where
     B: Bundle + Clone,
     C: Compose,
 {
-    SpawnWith {
+    Spawn {
         spawn_fn: Arc::new(move |world, cell| {
             if let Some(entity) = cell {
                 world.entity_mut(*entity).insert(bundle.clone());
@@ -554,18 +554,20 @@ where
     }
 }
 
+type ObserverFn<'a> = Box<dyn Fn(&mut EntityWorldMut) + 'a>;
+
 /// Spawn composable with content.
 ///
-/// See [`spawn_with`] for more information.
+/// See [`spawn`] and [`spawn_with`] for more information.
 #[must_use = "Composables do nothing unless composed with `actuate::run` or returned from other composables"]
-pub struct SpawnWith<'a, C> {
+pub struct Spawn<'a, C> {
     spawn_fn: SpawnFn,
     content: C,
     target: Option<Entity>,
-    observer_fns: Vec<Box<dyn Fn(&mut EntityWorldMut) + 'a>>,
+    observer_fns: Vec<ObserverFn<'a>>,
 }
 
-impl<'a, C> SpawnWith<'a, C> {
+impl<'a, C> Spawn<'a, C> {
     /// Get the target entity to spawn the composition into.
     ///
     /// If `None`, this will use the composition's parent (if any).
@@ -609,7 +611,7 @@ impl<'a, C> SpawnWith<'a, C> {
             >;
 
             let f: SpawnObserveFn<'a, F, E, B, Marker> = Box::new(move |trigger, mut params| {
-                let trigger = unsafe { mem::transmute(trigger) };
+                let trigger: Trigger<'static, E, B> = unsafe { mem::transmute(trigger) };
                 observer.run(trigger, params.p0())
             });
             let f: SpawnObserveFn<'static, F, E, B, Marker> = unsafe { mem::transmute(f) };
@@ -620,9 +622,9 @@ impl<'a, C> SpawnWith<'a, C> {
     }
 }
 
-unsafe impl<C: Data> Data for SpawnWith<'_, C> {}
+unsafe impl<C: Data> Data for Spawn<'_, C> {}
 
-impl<C: Compose> Compose for SpawnWith<'_, C> {
+impl<C: Compose> Compose for Spawn<'_, C> {
     fn compose(cx: Scope<Self>) -> impl Compose {
         let spawn_cx = use_context::<SpawnContext>(&cx);
 
