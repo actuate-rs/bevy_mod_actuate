@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2](https://github.com/actuate-rs/bevy_mod_actuate/compare/v0.4.1...v0.4.2) - 2024-11-25
+
+### Other
+
+- Rename SpawnWith to Spawn and pass clippy
+- Add observers to SpawnWith and create counter example
+- Update SystemParamFunction to include input and output
+- Add use_world_once hook
+
 ## [0.4.1](https://github.com/actuate-rs/bevy_mod_actuate/compare/v0.4.0...v0.4.1) - 2024-11-24
 
 ### Other
